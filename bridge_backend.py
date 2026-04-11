@@ -32,6 +32,7 @@ from actions.offline_assistant import offline_assistant
 from actions.workflow_manager import workflow_manager
 from actions.kasa_control import kasa_control
 from actions.browser_control import browser_control
+from actions.screen_processor import screen_process_sync
 from browser_agent_bridge import BrowserAgentBridge
 from actions.voice_pipeline import (
     detect_voice_capabilities,
@@ -2618,6 +2619,34 @@ p{line-height:1.75}
         if not raw:
             return None
         lower = raw.lower()
+        camera_intent = any(token in lower for token in ("camera", "cam", "webcam")) and any(
+            token in lower
+            for token in (
+                "see",
+                "describe",
+                "look",
+                "what",
+                "show",
+            )
+        )
+        screen_intent = any(
+            token in lower
+            for token in (
+                "screen",
+                "screenshot",
+                "on my screen",
+                "what am i doing",
+                "what's on my screen",
+                "whats on my screen",
+            )
+        )
+        if camera_intent or screen_intent:
+            try:
+                mode = "camera" if camera_intent else "screen"
+                result = screen_process_sync({"angle": mode, "text": "Describe what you see"}, player=self)
+                return result
+            except Exception as exc:
+                return f"Camera analysis failed: {exc}"
         ppt_intent = (
             any(token in lower for token in ("ppt", "pptx", "powerpoint", "presentation", "slides"))
             and any(token in lower for token in ("create", "make", "generate", "build", "design"))
@@ -3010,6 +3039,7 @@ p{line-height:1.75}
         if direct_result:
             response = str(direct_result)
             self.write_log(f"Brahma AI: {response}", mirror=mirror)
+            self._speak_response_async(response)
             return response
         plugin_response, plugin_meta = self.plugin_manager.handle(text, {"source": source})
         if plugin_response:
@@ -3018,6 +3048,7 @@ p{line-height:1.75}
                 self.write_log(f"[plugin:{plugin_meta.get('name')}] {response}", mirror=mirror)
             else:
                 self.write_log(f"[plugin] {response}", mirror=mirror)
+            self._speak_response_async(response)
             return response
         route = route_command(text, advanced_mode=False)
 
@@ -3028,6 +3059,7 @@ p{line-height:1.75}
         result, _route = self.execute_hybrid_command(text, force_openclaw=False)
         response = str(result or "Done.")
         self.write_log(f"Brahma AI: {response}", mirror=mirror)
+        self._speak_response_async(response)
         return response
 
     def set_live_user_text(self, text: str):
@@ -3483,6 +3515,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 direct_result = UI.try_handle_direct_command(text)
                 if direct_result:
                     UI.write_log(f"Brahma AI: {direct_result}")
+                    UI._speak_response_async(str(direct_result))
                     self._send_json({
                         "ok": True,
                         "mode": "direct",
@@ -3497,6 +3530,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                         UI.write_log(f"[plugin:{plugin_meta.get('name')}] {message}")
                     else:
                         UI.write_log(f"[plugin] {message}")
+                    UI._speak_response_async(message)
                     self._send_json({
                         "ok": True,
                         "mode": "plugin",
@@ -3521,6 +3555,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
                 result, route = UI.execute_hybrid_command(text, force_openclaw=False)
                 UI.write_log(f"Brahma AI: {result}")
+                UI._speak_response_async(str(result))
                 self._send_json({
                     "ok": True,
                     "mode": "offline",

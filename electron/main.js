@@ -185,7 +185,12 @@ async function startBackend() {
   backendProcess = spawn(command, args, {
     cwd,
     env: {
-      ...process.env,
+      ...(() => {
+        const env = { ...process.env };
+        delete env.GOOGLE_API_KEY;
+        delete env.GEMINI_API_KEY;
+        return env;
+      })(),
       BRAHMA_BACKEND_PORT: '8770',
       BRAHMA_CONFIG_DIR: path.join(electronDataDir, 'config'),
       BRAHMA_LOG_FILE: path.join(electronDataDir, 'backend.log'),
