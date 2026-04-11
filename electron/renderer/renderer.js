@@ -2546,9 +2546,17 @@ async function initializeOnboarding() {
 }
 
 async function pollState() {
+  let state = null;
   try {
     const res = await fetch(`${backendUrl}/api/state`);
-    const state = await res.json();
+    state = await res.json();
+  } catch (error) {
+    setStatusText('OFFLINE');
+    camValue.textContent = 'OFF';
+    netValue.textContent = 'OFFLINE';
+    return;
+  }
+  try {
     if (!state.apiKeyReady && appState.geminiApiKey && !apiKeyHydrated) {
       try {
         await fetch(`${backendUrl}/api/api-key`, {
@@ -2616,9 +2624,7 @@ async function pollState() {
       await speakStartupGreeting();
     }
   } catch (error) {
-    setStatusText('OFFLINE');
-    camValue.textContent = 'OFF';
-    netValue.textContent = 'OFFLINE';
+    appendLocalLog('[error] UI sync failed. Some panels may be stale.');
   }
 }
 

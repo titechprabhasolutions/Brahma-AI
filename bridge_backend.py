@@ -1115,7 +1115,8 @@ class BridgeUI:
         if not points and rows:
             points = [f"{row['title']}: {row['snippet']}" for row in rows[:10] if row.get("snippet")]
         if not summary and rows:
-            summary = " ".join(filter(None, [rows[0].get("snippet", ""), rows[1].get("snippet", "")])).strip()
+            fallback_snippets = [row.get("snippet", "") for row in rows[:2] if row.get("snippet")]
+            summary = " ".join(filter(None, fallback_snippets)).strip()
         if not source_url and rows:
             source_url = rows[0].get("url", "")
 
