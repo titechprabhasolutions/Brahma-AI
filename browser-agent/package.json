@@ -1,0 +1,15 @@
+{
+  "name": "browser-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Agentic browser automation system using Node.js and Playwright",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "install:playwright": "npx playwright install chromium",
+    "server": "node server.js"
+  },
+  "dependencies": {
+    "playwright": "^1.51.1"
+  }
+}

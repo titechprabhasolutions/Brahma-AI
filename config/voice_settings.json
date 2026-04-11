@@ -1,0 +1,14 @@
+{
+  "profile": "friendly",
+  "providerOrder": [
+    "edge_tts"
+  ],
+  "elevenLabsApiKey": "",
+  "elevenLabsVoiceId": "",
+  "elevenLabsModel": "eleven_turbo_v2_5",
+  "edgeVoice": "en-US-GuyNeural",
+  "edgeRate": "-6%",
+  "edgePitch": "-2Hz",
+  "piperExecutable": "",
+  "piperModel": ""
+}

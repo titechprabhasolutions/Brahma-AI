@@ -1,0 +1,59 @@
+{
+  "name": "brahma-ai-electron",
+  "version": "5.0.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-backend.ps1",
+    "dist": "npm run build:backend && electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^25.1.6"
+  },
+  "dependencies": {
+    "active-win": "^8.2.1",
+    "firebase": "^12.10.0",
+    "node-fetch": "^2.6.12",
+    "qrcode": "^1.5.4"
+  },
+  "build": {
+    "appId": "com.brahma.ai",
+    "productName": "Brahma AI",
+    "artifactName": "Brahma AI ${version}.${ext}",
+    "npmRebuild": false,
+    "files": [
+      "electron/**",
+      "config/**",
+      "models/**",
+      "actions/**",
+      "agent/**",
+      "core/**",
+      "memory/**",
+      "main.py",
+      "bridge_backend.py",
+      "ui.py",
+      "setup.py",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bk",
+        "to": "backend"
+      }
+    ],
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        "dir"
+      ],
+      "signAndEditExecutable": false,
+      "icon": "build/brahma.ico"
+    }
+  }
+}

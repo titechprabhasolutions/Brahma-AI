@@ -1,0 +1,138 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Cursor Assistant</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      color: #f2f2f2;
+      font-family: "Segoe UI", sans-serif;
+    }
+    #wrap {
+      width: 100%;
+      padding: 10px 12px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 14px;
+      background:
+        linear-gradient(180deg, rgba(18, 18, 18, 0.96), rgba(6, 6, 6, 0.95)),
+        radial-gradient(circle at top right, rgba(255, 255, 255, 0.12), transparent 48%);
+      box-shadow:
+        0 12px 28px rgba(0, 0, 0, 0.38),
+        0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+        0 0 22px rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(14px);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .title-wrap {
+      display: grid;
+      gap: 2px;
+    }
+    header span {
+      letter-spacing: .12em;
+      color: #efefef;
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .sub {
+      color: rgba(236, 236, 236, 0.72);
+      font-size: 11px;
+    }
+    header button {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+      color: #d2d2d2;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 0;
+    }
+    #actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    #actions button {
+      min-height: 34px;
+      padding: 7px 10px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #f2f2f2;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    #actions button:hover {
+      border-color: rgba(255, 255, 255, 0.64);
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.22);
+    }
+    #spin {
+      margin: 10px auto 0;
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.22);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin .9s linear infinite;
+    }
+    .hidden { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <header>
+      <div class="title-wrap">
+        <span>Brahma Assist</span>
+        <div class="sub">Quick action on selected text</div>
+      </div>
+      <button id="close" aria-label="Close">×</button>
+    </header>
+    <div id="actions">
+      <button data-action="summarize">Summarize</button>
+      <button data-action="rewrite">Rewrite</button>
+      <button data-action="explain">Explain</button>
+    </div>
+    <div id="spin" class="hidden"></div>
+  </div>
+  <script>
+    const spin = document.getElementById('spin');
+    const closeBtn = document.getElementById('close');
+    const actions = document.getElementById('actions');
+    let currentSelection = '';
+    window.cursorAPI.onSelection((sel) => {
+      currentSelection = sel;
+      spin.classList.add('hidden');
+    });
+    document.addEventListener('mouseenter', () => window.cursorAPI.hover(true));
+    document.addEventListener('mouseleave', () => window.cursorAPI.hover(false));
+    actions.addEventListener('click', async (e) => {
+      if (!(e.target instanceof HTMLButtonElement)) return;
+      if (!currentSelection) return;
+      spin.classList.remove('hidden');
+      try {
+        await window.cursorAPI.act(e.target.dataset.action, currentSelection);
+      } finally {
+        spin.classList.add('hidden');
+      }
+    });
+    closeBtn.addEventListener('click', () => window.cursorAPI.hide());
+    document.addEventListener('keyup', (e) => { if (e.key === 'Escape') window.cursorAPI.hide(); });
+  </script>
+</body>
+</html>

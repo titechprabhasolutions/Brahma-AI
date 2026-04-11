@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brahma AI</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <section id="onboardingOverlay" class="onboarding-overlay hidden">
+    <div class="onboarding-shell">
+      <div class="onboarding-copy">
+        <div class="onboarding-kicker">First Launch</div>
+        <h1>Initialize Brahma AI</h1>
+        <p>Set up your assistant in two quick steps, then launch into your personal AI dashboard.</p>
+        <div class="onboarding-progress-copy">
+          <span id="onboardingStepLabel">Step 1 / 2</span>
+          <strong id="onboardingStepTitle">Account Setup</strong>
+        </div>
+        <div class="onboarding-progress-bar" aria-hidden="true">
+          <span id="progressDotOne" class="progress-dot active"></span>
+          <span class="progress-line"></span>
+          <span id="progressDotTwo" class="progress-dot"></span>
+        </div>
+        <ul class="onboarding-points">
+          <li><strong>Secure Login</strong><span>Your data is encrypted and stored locally.</span></li>
+          <li><strong>AI Ready</strong><span>Your assistant connects using your Gemini API key.</span></li>
+          <li><strong>Private & Safe</strong><span>Your conversations stay on your device.</span></li>
+        </ul>
+        <div class="onboarding-trust">Your API key is stored locally and never shared.</div>
+      </div>
+
+      <div class="onboarding-card">
+        <div class="auth-switch">
+          <button id="authModeSignIn" class="auth-tab active" type="button">Sign In</button>
+          <button id="authModeCreate" class="auth-tab" type="button">Create Account</button>
+        </div>
+
+        <form id="authForm" class="auth-form">
+          <div id="authStepAccount" class="auth-step">
+            <label class="auth-label">
+              <span>Email</span>
+              <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+              <small id="emailFeedback" class="field-feedback"></small>
+            </label>
+            <label class="auth-label">
+              <span>Password</span>
+              <div class="password-wrap">
+                <input id="authPassword" type="password" placeholder="Minimum 6 characters" autocomplete="current-password" />
+                <button id="togglePasswordBtn" class="password-toggle" type="button">Show</button>
+              </div>
+              <button id="resetPasswordBtn" class="auth-inline-link" type="button">Forgot Password</button>
+              <small id="passwordFeedback" class="field-feedback"></small>
+            </label>
+            <div class="auth-actions-stack">
+              <button id="authContinueBtn" class="auth-submit" type="button">Continue</button>
+              <button id="googleSignInBtn" class="auth-secondary" type="button">Continue With Google</button>
+            </div>
+          </div>
+
+          <div id="authStepApi" class="auth-step hidden">
+            <label class="auth-label">
+              <span>Gemini API Key</span>
+              <input id="onboardingApiKey" type="password" placeholder="AIza..." autocomplete="off" />
+              <a class="auth-help-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get your API key from Google AI Studio →</a>
+              <small id="apiKeyFeedback" class="field-feedback"></small>
+            </label>
+            <div class="auth-actions-stack">
+              <button id="testApiKeyBtn" class="auth-secondary" type="button">Test Connection</button>
+              <button id="authSubmit" class="auth-submit" type="submit">Initialize Brahma AI</button>
+              <button id="authBackBtn" class="auth-inline-link back-link" type="button">Back to account setup</button>
+            </div>
+          </div>
+
+          <div id="authMessage" class="auth-message"></div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section id="bootOverlay" class="boot-overlay hidden">
+    <div class="boot-shell">
+      <div class="boot-reactor">
+        <div class="boot-ring boot-ring-a"></div>
+        <div class="boot-ring boot-ring-b"></div>
+        <div class="boot-core"></div>
+      </div>
+      <div class="boot-copy">BRAHMA AI INITIALIZING...</div>
+      <div id="bootLog" class="boot-log"></div>
+      <div id="bootWelcome" class="boot-welcome hidden">System ready.</div>
+    </div>
+  </section>
+
+  <section id="tutorialOverlay" class="tutorial-overlay hidden">
+    <div id="tutorialHighlight" class="tutorial-highlight"></div>
+    <div class="tutorial-panel">
+      <div class="tutorial-step">Guided Setup</div>
+      <h2 id="tutorialTitle">Command Console</h2>
+      <p id="tutorialDescription">Type or speak commands here to control Brahma AI.</p>
+      <div id="tutorialFeatureCards" class="tutorial-feature-cards hidden">
+        <article class="tutorial-feature-card">
+          <strong>Voice Commands</strong>
+          <span>Talk to Brahma AI and keep the mic under your control.</span>
+        </article>
+        <article class="tutorial-feature-card">
+          <strong>Automations</strong>
+          <span>Create and run saved sequences for daily routines.</span>
+        </article>
+        <article class="tutorial-feature-card">
+          <strong>Screen & Device Control</strong>
+          <span>Use camera, gesture input, Kasa control, and screen analysis.</span>
+        </article>
+      </div>
+      <div class="tutorial-actions">
+        <button id="tutorialSkipBtn" class="sequence-btn" type="button">Skip Tutorial</button>
+        <button id="tutorialNextBtn" class="sequence-btn primary" type="button">Next</button>
+        <button id="tutorialDemoBtn" class="sequence-btn primary hidden" type="button">Run Demo</button>
+        <button id="tutorialFinishBtn" class="sequence-btn primary hidden" type="button">Finish</button>
+      </div>
+    </div>
+  </section>
+
+  <main class="shell">
+    <header class="topbar"></header>
+
+    <div class="frame"></div>
+    <button id="sidebarToggle" class="sidebar-tab" type="button" aria-label="Toggle sidebar">&gt;</button>
+
+    <aside class="left-column">
+      <nav class="sidebar-nav panel neon-panel">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Workspace</div>
+          <button id="cameraTabBtn" class="sidebar-nav-btn active" type="button">Dashboard</button>
+          <button id="settingsTabBtn" class="sidebar-nav-btn" type="button">Settings</button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Modes</div>
+          <button class="sidebar-nav-btn mode-btn" data-mode="observe" type="button">Observe</button>
+          <button class="sidebar-nav-btn mode-btn active" data-mode="assist" type="button">Assist</button>
+          <button class="sidebar-nav-btn mode-btn" data-mode="do" type="button">Do This</button>
+          <div id="modeStatus" class="sidebar-mode-status">Assist mode</div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Routines</div>
+          <div id="routineList" class="routine-list"></div>
+          <button id="createRoutineBtn" class="sidebar-nav-btn sidebar-link-btn" type="button">Create Routine</button>
+        </div>
+        <div class="sidebar-section sidebar-connect-section">
+          <div class="sidebar-section-title">Connect</div>
+          <button id="mobileLinkBtn" class="sidebar-nav-btn sidebar-link-btn" type="button">Mobile Link</button>
+        </div>
+      </nav>
+
+      <section class="assistant-card panel neon-panel">
+        <div class="profile-avatar-wrap">
+          <img id="userProfileImage" class="profile-avatar hidden" alt="User profile" />
+          <div id="userProfileFallback" class="assistant-dot"></div>
+        </div>
+        <div class="assistant-meta">
+          <div id="userProfileName" class="assistant-name">Guest User</div>
+          <div id="userProfileEmail" class="assistant-sub">Not signed in</div>
+          <div id="statusValue" class="assistant-status">ONLINE</div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="core-column">
+      <!-- Cursor Assistant bubble -->
+      <div id="cursorAssistant" class="cursor-assistant hidden">
+        <div class="cursor-assistant-header">
+          <span class="cursor-assistant-title">AI</span>
+          <button id="cursorAssistantClose" class="cursor-assistant-close" type="button">×</button>
+        </div>
+        <div id="cursorAssistantActions" class="cursor-assistant-actions">
+          <button data-action="summarize" type="button">Summarize</button>
+          <button data-action="rewrite" type="button">Rewrite</button>
+          <button data-action="explain" type="button">Explain</button>
+        </div>
+        <div id="cursorAssistantSpinner" class="cursor-assistant-spinner hidden"></div>
+      </div>
+    <section id="settingsPage" class="settings-page panel neon-panel hidden">
+        <div class="settings-page-head">
+          <div class="panel-title">Settings</div>
+          <div class="settings-page-subtitle">Profile, security, and voice controls for your desktop assistant</div>
+        </div>
+
+        <div class="settings-page-grid">
+          <section class="settings-block">
+            <div class="settings-block-title">Profile</div>
+            <label class="voice-field">
+              <span>Username</span>
+              <input id="profileNameInput" type="text" placeholder="Brahma AI user" />
+            </label>
+            <label class="voice-field">
+              <span>Profile Picture</span>
+              <input id="profilePhotoFile" type="file" accept="image/*" />
+              <small id="profilePhotoName" class="field-hint">No file selected</small>
+            </label>
+            <label class="voice-field">
+              <span>Email</span>
+              <input id="profileEmailInput" type="email" placeholder="Signed-in email" readonly />
+            </label>
+            <div class="voice-actions">
+              <button id="saveProfileBtn" class="sequence-btn primary" type="button">Save Profile</button>
+              <button id="settingsResetPasswordBtn" class="sequence-btn" type="button">Forgot Password</button>
+            </div>
+            <div class="voice-actions">
+              <button id="logoutBtn" class="sequence-btn" type="button">Log Out</button>
+              <button id="deleteAccountBtn" class="sequence-btn danger" type="button">Delete Account</button>
+            </div>
+          </section>
+
+          <section class="settings-block voice-panel">
+            <div class="settings-block-title">Voice Stack</div>
+            <label class="voice-field">
+              <span>Profile</span>
+              <select id="voiceProfile">
+                <option value="jarvis">JARVIS</option>
+                <option value="friendly">Friendly</option>
+                <option value="minimal">Minimal</option>
+              </select>
+            </label>
+            <label class="voice-field">
+              <span>ElevenLabs API Key</span>
+              <input id="elevenLabsApiKey" type="password" placeholder="Optional" />
+            </label>
+            <label class="voice-field">
+              <span>ElevenLabs Voice ID</span>
+              <input id="elevenLabsVoiceId" type="text" placeholder="Adam voice ID" />
+            </label>
+            <label class="voice-field">
+              <span>Edge Voice</span>
+              <input id="edgeVoice" type="text" placeholder="en-US-GuyNeural" />
+            </label>
+            <label class="voice-field">
+              <span>Piper Executable</span>
+              <input id="piperExecutable" type="text" placeholder="Optional path to piper.exe" />
+            </label>
+            <label class="voice-field">
+              <span>Piper Model</span>
+              <input id="piperModel" type="text" placeholder="Optional path to .onnx model" />
+            </label>
+            <div class="voice-actions">
+              <button id="saveVoiceSettingsBtn" class="sequence-btn" type="button">Save Voice</button>
+              <button id="testVoiceBtn" class="sequence-btn primary" type="button">Test Voice</button>
+            </div>
+            <div id="voiceStatus" class="voice-status">Primary: ElevenLabs, backup: Edge, offline: Piper</div>
+          </section>
+
+          <section class="settings-block">
+            <div class="discord-remote-head">
+              <div class="discord-icon">
+                <span>D</span>
+              </div>
+              <div>
+                <div class="settings-block-title">Discord Remote</div>
+                <div class="discord-subtitle">Agentic commands from your server</div>
+              </div>
+            </div>
+            <label class="voice-field">
+              <span>Bot Token</span>
+              <input id="discordBotToken" type="password" placeholder="Paste Discord bot token" />
+            </label>
+            <label class="voice-field">
+              <span>Channel IDs (comma separated)</span>
+              <input id="discordChannelIds" type="text" placeholder="123456789012345678, 234567890123456789" />
+            </label>
+            <div class="discord-switches">
+              <label class="switch-row">
+                <span>Enable Discord Remote Control</span>
+                <label class="switch">
+                  <input id="discordRemoteToggle" type="checkbox" />
+                  <span class="slider"></span>
+                </label>
+              </label>
+              <label class="switch-row">
+                <span>Mirror Brahma replies to Discord</span>
+                <label class="switch">
+                  <input id="discordMirrorToggle" type="checkbox" checked />
+                  <span class="slider"></span>
+                </label>
+              </label>
+            </div>
+            <div class="voice-actions">
+              <button id="discordSaveBtn" class="sequence-btn primary" type="button">Save Discord Settings</button>
+              <button id="discordTestBtn" class="sequence-btn" type="button">Test Connection</button>
+            </div>
+            <div class="discord-status">
+              <span id="discordStatusDot" class="discord-status-dot"></span>
+              <div>
+                <div id="discordStatusText">DISCONNECTED</div>
+                <div id="discordStatusMeta">Latency: --</div>
+              </div>
+            </div>
+            <div class="discord-channel-preview" id="discordChannelPreview"></div>
+            <div class="discord-log" id="discordLog"></div>
+          </section>
+
+          <section class="settings-block experience-panel">
+            <div class="settings-block-title">Workspace Experience</div>
+            <label class="toggle-field">
+              <span>Minimal Mode</span>
+              <input id="minimalModeToggle" type="checkbox" />
+            </label>
+            <div id="minimalModeHint" class="voice-status">
+              Off: Full dashboard visible. On: only mic, reactor, and command input stay visible.
+            </div>
+            <label class="voice-field">
+              <span>Gemini API Key</span>
+              <input id="settingsApiKeyInput" type="password" placeholder="AIza..." autocomplete="off" />
+              <a class="auth-help-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get your API key from Google AI Studio →</a>
+            </label>
+            <div class="voice-actions">
+              <button id="settingsApiSaveBtn" class="sequence-btn primary" type="button">Save API Key</button>
+            </div>
+            <div id="settingsApiStatus" class="voice-status">API key is saved locally on your device.</div>
+          </section>
+
+          <section class="about-card panel neon-panel settings-about">
+            <div class="panel-title">About Brahma AI</div>
+            <div class="about-body">
+              <p class="about-line"><strong>Founder &amp; Developer:</strong> Suryaansh Tiwari</p>
+              <p class="about-line">
+                <strong>YouTube:</strong>
+                <a href="https://youtube.com/@buildonaut-ai?si=TiDmR-hH7JGTohle" target="_blank" rel="noreferrer">
+                  youtube.com/@buildonaut-ai
+                </a>
+              </p>
+              <p class="about-line">
+                <strong>Focus:</strong> Private, desktop-first automations with Gemini chat, sequences, and voice control tuned by Suryaansh Tiwari.
+              </p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="core-panel">
+        <div class="reactor-stage">
+          <div id="reactorDiscordBadge" class="reactor-discord-badge hidden" aria-label="Discord connected">
+            <span class="reactor-discord-dot"></span>
+            <span class="reactor-discord-text">Discord</span>
+          </div>
+          <div class="flow-visual">
+            <article class="flow-card command-flow-card">
+              <div class="flow-card-label">Command</div>
+              <div id="flowCommandText" class="flow-card-value">Download video</div>
+            </article>
+            <div class="flow-link flow-link-left"></div>
+            <div class="flow-link flow-link-right"></div>
+            <article class="flow-card result-flow-card">
+              <div class="flow-card-label">Action Result</div>
+              <div id="flowResultText" class="flow-card-value">Video downloaded</div>
+            </article>
+          </div>
+          <section id="cameraPanel" class="camera-panel hidden">
+            <div class="camera-panel-head">
+              <div class="camera-panel-title">Camera View</div>
+              <div id="cameraBadge" class="camera-badge">CAMERA OFF</div>
+            </div>
+            <video id="cameraVideo" autoplay muted playsinline></video>
+            <img id="cameraImage" class="camera-image hidden" alt="Gesture preview" />
+            <div id="cameraPlaceholder" class="camera-placeholder hidden">Waiting for gesture feed...</div>
+          </section>
+          <div class="reactor-shell">
+            <div class="scan scan-a"></div>
+            <div class="scan scan-b"></div>
+            <div class="ring ring-outer"></div>
+            <div class="ring ring-mid"></div>
+            <div class="ring ring-inner"></div>
+            <div class="arc arc-a"></div>
+            <div class="arc arc-b"></div>
+            <div class="arc arc-c"></div>
+            <div class="core-ring">
+              <div class="core-inner"></div>
+            </div>
+            <div class="reactor-label">Brahma</div>
+          </div>
+        </div>
+        <section class="control-rail floating-controls controls-below-reactor">
+          <div class="rail-stack horizontal">
+            <button id="micToggle" class="rail-btn cyan" type="button" aria-label="Microphone">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 1 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v3"/><path d="M8 21h8"/></svg>
+            </button>
+            <button id="chatToggle" class="rail-btn cyan active" type="button" aria-label="Code tools">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13 5-2 14"/></svg>
+            </button>
+            <button id="projectWorkspaceRailBtn" class="rail-btn cyan" type="button" title="Project workspace" aria-label="Project workspace">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><path d="M3 10h18"/></svg>
+            </button>
+            <button id="voiceToggle" class="rail-btn amber" type="button" aria-label="Voice response">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M5 12a7 7 0 0 1 14 0"/><path d="M7.5 12a4.5 4.5 0 0 1 9 0"/></svg>
+            </button>
+            <button id="developerToggle" class="rail-btn cyan hand" type="button" aria-label="Gesture control">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V6a1 1 0 1 1 2 0v4"/><path d="M10 10V5a1 1 0 1 1 2 0v5"/><path d="M12 10V6a1 1 0 1 1 2 0v4"/><path d="M14 11V8a1 1 0 1 1 2 0v6c0 3-2 5-5 5h-1c-2.8 0-5-2.2-5-5v-3a1 1 0 1 1 2 0v2"/></svg>
+            </button>
+            <button id="kasaToggle" class="rail-btn cyan" type="button" aria-label="Home devices">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 11 8-6 8 6"/><path d="M7 10.5V19h10v-8.5"/><path d="M10 19v-5h4v5"/></svg>
+            </button>
+            <button id="cadToggle" class="rail-btn cyan" type="button" aria-label="CAD studio">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/><path d="M9 9h6v6H9z"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <section class="active-task-card panel neon-panel">
+          <div class="active-task-head">
+            <div class="panel-title">Active Task</div>
+            <div id="activeTaskMode" class="active-task-mode">Assist</div>
+          </div>
+          <div class="active-task-body">
+            <div class="active-task-main">
+              <div id="activeTaskTitle" class="active-task-title">Running: Download video</div>
+              <div id="activeTaskStatus" class="active-task-status">Status: Active</div>
+              <div id="activeTaskLast" class="active-task-last">Last action: Opened Chrome</div>
+            </div>
+            <div class="active-task-progress-wrap">
+              <div class="active-task-progress-meta">
+                <span>Progress</span>
+                <strong id="activeTaskProgressValue">35%</strong>
+              </div>
+              <div class="active-task-progress-rail">
+                <span id="activeTaskProgress" style="width:35%"></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="contextAssistantPanel" class="context-assistant panel neon-panel hidden">
+          <div class="context-assistant-head">
+            <div class="panel-title">Brahma Assistant</div>
+            <div id="contextAppBadge" class="context-app-badge">Idle</div>
+          </div>
+          <div id="contextAssistantSubtitle" class="context-assistant-subtitle">Waiting for active app context...</div>
+          <div id="contextSuggestionRow" class="context-suggestion-row">
+            <button id="contextActionOne" class="context-action-btn" type="button">Write Email</button>
+            <button id="contextActionTwo" class="context-action-btn" type="button">Reply</button>
+            <button id="contextActionThree" class="context-action-btn" type="button">Ignore</button>
+          </div>
+        </section>
+
+        <div class="metric-ribbon">
+          <div class="metric-box"><span class="metric-icon">&#9678;</span><div class="metric-copy"><span class="metric-label">CPU</span><strong id="cpuValue">19%</strong></div></div>
+          <div class="metric-box"><span class="metric-icon">&#9673;</span><div class="metric-copy"><span class="metric-label">RAM</span><strong id="memValue">55%</strong></div></div>
+          <div class="metric-box"><span class="metric-icon">&#8993;</span><div class="metric-copy"><span class="metric-label">Net</span><strong id="netValue">ONLINE</strong></div></div>
+          <div class="metric-box"><span class="metric-icon">&#9681;</span><div class="metric-copy"><span class="metric-label">Cam</span><strong id="camValue">OFF</strong></div></div>
+        </div>
+
+        <form id="commandForm" class="composer hero-composer">
+          <input id="commandInput" type="text" placeholder="Speak or type a command..." />
+          <button id="sendPrimary" type="submit">Send</button>
+        </form>
+
+      </section>
+    </section>
+
+    <aside id="rightColumn" class="right-column">
+      <section id="streamPanel" class="stream-panel panel neon-panel">
+        <div class="stream-head">
+          <div class="panel-title">Command Stream</div>
+          <div class="stream-dots"><span></span><span></span><span></span></div>
+        </div>
+        <div class="stream-tabs">
+          <button id="commandTabBtn" class="stream-tab active" type="button">Commands</button>
+          <button id="sequencesTabBtn" class="stream-tab" type="button">Sequences</button>
+          <button id="logsTabBtn" class="stream-tab" type="button">Logs</button>
+        </div>
+        <div id="commandTabPane" class="stream-tab-pane active">
+          <div id="logList" class="log-list split"></div>
+        </div>
+        <section id="sequencePanel" class="sequence-panel stream-tab-pane">
+          <input id="sequenceName" class="sequence-name" type="text" placeholder="Sequence name" />
+          <textarea id="sequenceSteps" class="sequence-steps" placeholder="One step per line&#10;open chrome&#10;play music&#10;organize downloads"></textarea>
+          <div class="sequence-actions">
+            <button id="saveSequenceBtn" class="sequence-btn" type="button">Save Sequence</button>
+            <button id="startSequenceBtn" class="sequence-btn primary" type="button">Start Sequence</button>
+          </div>
+          <div class="sequence-actions">
+            <button id="deleteSequenceBtn" class="sequence-btn danger" type="button">Delete Sequence</button>
+          </div>
+          <div id="sequenceList" class="sequence-list"></div>
+        </section>
+        <div id="logsTabPane" class="stream-tab-pane">
+          <div id="systemLogList" class="log-list split"></div>
+        </div>
+      </section>
+
+      <div class="sequence-toggle-dock">
+        <button id="sequenceOpenBtn" class="sequence-toggle-btn" type="button" aria-label="Open sequence builder" title="Open sequence builder">◀</button>
+        <button id="sequenceCloseBtn" class="sequence-toggle-btn hidden" type="button" aria-label="Close sequence builder" title="Close sequence builder">▶</button>
+      </div>
+
+    </aside>
+
+    <div id="routineModal" class="routine-modal hidden" role="dialog" aria-modal="true">
+      <div class="routine-modal-card panel neon-panel">
+        <div class="stream-head">
+          <div class="panel-title">Create Routine</div>
+          <button id="routineModalCloseBtn" class="routine-modal-close" type="button">x</button>
+        </div>
+        <input id="routineNameInput" class="sequence-name" type="text" placeholder="Routine name" />
+        <textarea id="routineStepsInput" class="sequence-steps" placeholder="One step per line"></textarea>
+        <div class="routine-schedule-row">
+          <label class="routine-schedule-toggle" for="routineAutoRunInput">
+            <input id="routineAutoRunInput" type="checkbox" />
+            Auto-run daily
+          </label>
+          <input id="routineTimeInput" class="routine-time-input" type="time" value="09:00" />
+        </div>
+        <div class="sequence-actions">
+          <button id="routineSaveBtn" class="sequence-btn primary" type="button">Save Routine</button>
+          <button id="routineRunBtn" class="sequence-btn" type="button">Run Now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating tool popups -->
+    <div id="toolPopupLayer"></div>
+    <div id="mobileLinkOverlay" class="mobile-link-overlay hidden" role="dialog" aria-modal="true">
+      <div class="mobile-link-dialog panel neon-panel">
+        <div class="mobile-link-head">
+          <div>
+            <div class="panel-title">Connect Brahma Mobile</div>
+            <div class="mobile-link-subtitle">Scan this QR from the mobile app to pair with this desktop.</div>
+          </div>
+          <button id="mobileLinkCloseBtn" class="mobile-link-close" type="button">X</button>
+        </div>
+        <div class="mobile-link-body">
+          <div class="mobile-link-qr-wrap">
+            <img id="mobileLinkQrImage" class="mobile-link-qr-image" alt="Brahma mobile connection QR" />
+          </div>
+          <div class="mobile-link-meta">
+            <div class="mobile-link-label">Desktop host</div>
+            <div id="mobileLinkHost" class="mobile-link-host">Loading...</div>
+            <div class="mobile-link-label">Other LAN addresses</div>
+            <div id="mobileLinkAddresses" class="mobile-link-addresses">Checking local network...</div>
+            <div id="mobileLinkStatus" class="mobile-link-status">Make sure phone and PC are on the same Wi-Fi.</div>
+            <div class="mobile-link-actions">
+              <button id="mobileLinkRefreshBtn" class="sequence-btn" type="button">Refresh</button>
+              <button id="mobileLinkCopyBtn" class="sequence-btn primary" type="button">Copy Host</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="confirmOverlay" class="confirm-overlay hidden" role="dialog" aria-modal="true">
+      <div class="confirm-dialog panel neon-panel">
+        <div class="confirm-header">
+          <div class="confirm-title">Approve screen actions</div>
+          <div id="confirmSubtitle" class="confirm-subtitle">Brahma will act on your screen after you confirm.</div>
+        </div>
+        <div id="confirmActions" class="confirm-actions"></div>
+        <div class="confirm-buttons">
+          <button id="confirmDenyBtn" type="button" class="sequence-btn">Deny</button>
+          <button id="confirmAllowBtn" type="button" class="sequence-btn primary">Allow</button>
+        </div>
+      </div>
+    </div>
+
+    <section id="setupPanel" class="setup-panel panel neon-panel hidden">
+      <div class="panel-title">Initialization Required</div>
+      <form id="apiForm" class="composer api-composer">
+        <input id="apiInput" type="password" placeholder="Gemini API key" />
+        <button type="submit">Save</button>
+      </form>
+      <p id="apiHint" class="api-hint"></p>
+    </section>
+  </main>
+  <script type="module" src="./renderer.js"></script>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.160.0/examples/js/loaders/STLLoader.js"></script>
+</body>
+</html>
+

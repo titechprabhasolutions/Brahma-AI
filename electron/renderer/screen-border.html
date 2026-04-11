@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Screen Border</title>
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+      }
+      .frame {
+        position: fixed;
+        inset: 0;
+        box-sizing: border-box;
+        border: 6px solid rgba(255, 255, 255, 0.94);
+        box-shadow:
+          0 0 0 2px rgba(255, 255, 255, 0.2) inset,
+          0 0 24px rgba(255, 255, 255, 0.34),
+          0 0 60px rgba(255, 255, 255, 0.2);
+        animation: pulse 0.9s ease-in-out infinite alternate;
+      }
+      .corner {
+        position: fixed;
+        width: 44px;
+        height: 44px;
+        border-color: rgba(255, 255, 255, 0.98);
+        border-style: solid;
+        filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.66));
+      }
+      .tl { top: 10px; left: 10px; border-width: 4px 0 0 4px; }
+      .tr { top: 10px; right: 10px; border-width: 4px 4px 0 0; }
+      .bl { bottom: 10px; left: 10px; border-width: 0 0 4px 4px; }
+      .br { bottom: 10px; right: 10px; border-width: 0 4px 4px 0; }
+      @keyframes pulse {
+        from {
+          opacity: 0.62;
+          transform: scale(0.996);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame"></div>
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+  </body>
+</html>

@@ -1,0 +1,236 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Brahma AI Mini Dock</title>
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #000000;
+        color: #f5f5f5;
+        font-family: "Segoe UI", sans-serif;
+        overflow: hidden;
+        -webkit-app-region: no-drag;
+      }
+      button, input, form, .mini-row, .mini-actions {
+        -webkit-app-region: no-drag;
+      }
+      #dockRoot {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: linear-gradient(180deg, #050505, #000000);
+        box-sizing: border-box;
+      }
+      #dragHandle {
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06));
+        -webkit-app-region: drag;
+        cursor: move;
+        flex: none;
+      }
+      #miniOrb {
+        display: none;
+        height: 100%;
+        align-items: center;
+        justify-content: center;
+        -webkit-app-region: drag;
+        cursor: move;
+      }
+      #orbBtn {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.7);
+        background: #0b0b0b;
+        color: #ffffff;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+      #dockContent {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        height: 100%;
+      }
+      .mini-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .mini-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .mini-avatar {
+        width: 42px;
+        height: 42px;
+        border: 2px solid rgba(255, 255, 255, 0.8);
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        color: #ffffff;
+        font-weight: 700;
+      }
+      .mini-title {
+        font-weight: 700;
+      }
+      .mini-subtitle {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.62);
+      }
+      .mini-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .mini-btn {
+        cursor: pointer;
+      }
+      #minBtn {
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: rgba(255, 255, 255, 0.04);
+        color: #ffffff;
+        padding: 8px 10px;
+        font-weight: 700;
+      }
+      #openBtn {
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+        color: #ffffff;
+        padding: 8px 14px;
+        font-weight: 700;
+      }
+      #chatForm, #sequenceForm {
+        display: flex;
+        gap: 8px;
+      }
+      #chatInput, #sequenceInput {
+        flex: 1;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: #090909;
+        color: #f5f5f5;
+        padding: 10px 12px;
+        outline: none;
+      }
+      #sendBtn {
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
+        color: #ffffff;
+        padding: 10px 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #startSequenceBtnMini {
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: rgba(255, 255, 255, 0.05);
+        color: #ffffff;
+        padding: 10px 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="dockRoot">
+      <div id="dragHandle"></div>
+      <div id="miniOrb">
+        <button id="orbBtn" type="button">AI</button>
+      </div>
+      <div id="dockContent">
+        <div class="mini-row">
+          <div class="mini-brand">
+            <div class="mini-avatar">AI</div>
+            <div>
+              <div class="mini-title">Brahma AI</div>
+              <div class="mini-subtitle">Running in background</div>
+            </div>
+          </div>
+          <div class="mini-actions">
+            <button id="minBtn" class="mini-btn" type="button">_</button>
+            <button id="openBtn" class="mini-btn" type="button">Open</button>
+          </div>
+        </div>
+        <form id="chatForm">
+          <input id="chatInput" type="text" placeholder="Type a command..." />
+          <button id="sendBtn" type="submit">Send</button>
+        </form>
+        <form id="sequenceForm">
+          <input id="sequenceInput" type="text" placeholder="Sequence name..." />
+          <button id="startSequenceBtnMini" type="submit">Start Sequence</button>
+        </form>
+      </div>
+    </div>
+    <script>
+      const dockRoot = document.getElementById('dockRoot');
+      const dockContent = document.getElementById('dockContent');
+      const miniOrb = document.getElementById('miniOrb');
+      const orbBtn = document.getElementById('orbBtn');
+      const openBtn = document.getElementById('openBtn');
+      const minBtn = document.getElementById('minBtn');
+      const chatInput = document.getElementById('chatInput');
+      const sequenceInput = document.getElementById('sequenceInput');
+      const chatForm = document.getElementById('chatForm');
+      const sequenceForm = document.getElementById('sequenceForm');
+      const sendBtn = document.getElementById('sendBtn');
+      const startSequenceBtnMini = document.getElementById('startSequenceBtnMini');
+
+      if (window.miniDock && typeof window.miniDock.onState === 'function') {
+        window.miniDock.onState((state) => {
+          const collapsed = !!state?.collapsed;
+          dockContent.style.display = collapsed ? 'none' : 'flex';
+          miniOrb.style.display = collapsed ? 'flex' : 'none';
+        });
+      }
+
+      async function sendMiniCommand() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        await window.miniDock.sendCommand(text);
+        chatInput.value = '';
+      }
+
+      async function startMiniSequence() {
+        const name = sequenceInput.value.trim();
+        if (!name) return;
+        await window.miniDock.startSequence(name);
+        sequenceInput.value = '';
+      }
+
+      openBtn.addEventListener('click', () => window.miniDock.restore());
+      orbBtn.addEventListener('click', () => window.miniDock.restore());
+      minBtn.addEventListener('click', () => window.miniDock.toggle());
+      sendBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        void sendMiniCommand();
+      });
+      startSequenceBtnMini.addEventListener('click', (event) => {
+        event.preventDefault();
+        void startMiniSequence();
+      });
+      chatForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void sendMiniCommand();
+      });
+      sequenceForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void startMiniSequence();
+      });
+      dockRoot.addEventListener('dblclick', () => window.miniDock.restore());
+
+      window.addEventListener('load', () => {
+        setTimeout(() => chatInput.focus(), 50);
+      });
+    </script>
+  </body>
+</html>

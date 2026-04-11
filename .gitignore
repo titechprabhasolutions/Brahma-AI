@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Build artifacts
+dist/
+release/
+Output/
+bk/
+*.exe
+
+# Electron user data
+electron-data/
+
+# Local caches
+*.log
+*.tmp
+.DS_Store
+
+# Editor settings
+.vscode/
+.idea/
+
+# Optional installers
+installer/release/
