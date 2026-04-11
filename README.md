@@ -44,6 +44,10 @@ npm run dist
 
 This runs the backend build and produces an Electron build folder in `release/`.
 
+## Plugins
+
+See `plugins/README.md` for how to add community plugins.
+
 ## Configuration
 
 - `config/api_keys.json`: API keys (do not commit real keys)

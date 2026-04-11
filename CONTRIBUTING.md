@@ -32,6 +32,10 @@ npm start
 - Update documentation if behavior changes
 - Avoid committing build artifacts (`dist/`, `release/`, `bk/`, `*.exe`)
 
+## Plugins
+
+Community plugins live under `plugins/`. See `plugins/README.md` for the minimal plugin API and example.
+
 ## Code Style
 
 - Prefer clear, explicit naming
