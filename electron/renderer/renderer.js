@@ -105,6 +105,10 @@ const minimalModeHint = document.getElementById('minimalModeHint');
 const settingsApiKeyInput = document.getElementById('settingsApiKeyInput');
 const settingsApiSaveBtn = document.getElementById('settingsApiSaveBtn');
 const settingsApiStatus = document.getElementById('settingsApiStatus');
+const pluginList = document.getElementById('pluginList');
+const pluginReloadBtn = document.getElementById('pluginReloadBtn');
+const pluginOpenFolderBtn = document.getElementById('pluginOpenFolderBtn');
+const pluginStatus = document.getElementById('pluginStatus');
 const cameraPanel = document.getElementById('cameraPanel');
 const cameraVideo = document.getElementById('cameraVideo');
 const cameraImage = document.getElementById('cameraImage');
@@ -704,6 +708,38 @@ function renderLogs(logs) {
     }
   });
   keepLogPinnedIfNeeded(shouldPin);
+}
+
+function renderPlugins(plugins = []) {
+  if (!pluginList) return;
+  const list = Array.isArray(plugins) ? plugins : [];
+  if (!list.length) {
+    pluginList.innerHTML = '';
+    if (pluginStatus) pluginStatus.textContent = 'No plugins loaded.';
+    return;
+  }
+  pluginList.innerHTML = list.map((plugin) => {
+    const name = plugin?.name || 'Unnamed plugin';
+    const desc = plugin?.description || '';
+    const version = plugin?.version || '0.0.0';
+    const error = plugin?.error || '';
+    const statusText = error ? 'Error' : 'Loaded';
+    return `
+      <div class="plugin-card">
+        <div class="plugin-meta">
+          <div class="plugin-name">${name} <span class="plugin-status ${error ? 'error' : ''}">${statusText}</span></div>
+          <div class="plugin-desc">${desc || 'No description provided.'}</div>
+        </div>
+        <div class="plugin-status ${error ? 'error' : ''}">v${version}</div>
+      </div>
+    `;
+  }).join('');
+  if (pluginStatus) {
+    const errors = list.filter((plugin) => plugin?.error);
+    pluginStatus.textContent = errors.length
+      ? `${errors.length} plugin(s) failed to load.`
+      : `${list.length} plugin(s) loaded.`;
+  }
 }
 
 function ensureLiveEntry(kind) {
@@ -2567,6 +2603,7 @@ async function pollState() {
     hydrateVoiceSettings(state.voiceSettings || {}, state.voiceCapabilities || {});
     hydrateDiscordSettings(state.discordSettings || {});
     updateDiscordUiFromState(state);
+    renderPlugins(state.plugins || []);
     syncSettingsApiUi();
     const automation = state.automation || {};
     const hybrid = state.hybrid || {};
@@ -3257,6 +3294,28 @@ discordTestBtn?.addEventListener('click', async () => {
   } catch (error) {
     setDiscordStatus({ connected: false, statusText: 'DISCONNECTED', metaText: 'Test failed.' });
     appendDiscordLog(error?.message || 'Test failed.');
+  }
+});
+
+pluginReloadBtn?.addEventListener('click', async () => {
+  if (pluginStatus) pluginStatus.textContent = 'Reloading plugins...';
+  try {
+    const res = await fetch(`${backendUrl}/api/plugins/reload`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to reload plugins.');
+    }
+    renderPlugins(data.plugins || []);
+  } catch (error) {
+    if (pluginStatus) pluginStatus.textContent = error?.message || 'Failed to reload plugins.';
+  }
+});
+
+pluginOpenFolderBtn?.addEventListener('click', async () => {
+  try {
+    await fetch(`${backendUrl}/api/plugins/open-folder`, { method: 'POST' });
+  } catch (_) {
+    // ignore
   }
 });
 

@@ -26,6 +26,7 @@
     "files": [
       "electron/**",
       "config/**",
+      "plugins/**",
       "models/**",
       "actions/**",
       "agent/**",

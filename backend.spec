@@ -13,7 +13,7 @@ datas = []
 binaries = []
 
 # Collect package data for first-party modules that may have templates or assets
-for pkg in ["actions", "agent", "core", "memory", "models"]:
+for pkg in ["actions", "agent", "core", "memory", "models", "plugins"]:
     pkg_path = project_root / pkg
     if pkg_path.exists():
         datas.append((str(pkg_path), pkg))

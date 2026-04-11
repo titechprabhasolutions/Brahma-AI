@@ -55,6 +55,7 @@ SEQUENCE_SCHEDULE_FILE = CONFIG_DIR / "sequence_schedules.json"
 GMAIL_SETTINGS_FILE = CONFIG_DIR / "gmail_settings.json"
 DISCORD_SETTINGS_FILE = CONFIG_DIR / "discord_settings.json"
 DISCORD_API_BASE = "https://discord.com/api/v10"
+PLUGINS_DIR = BASE_DIR / "plugins"
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -106,6 +107,141 @@ def route_command(text: str, advanced_mode: bool = False) -> RouteDecision:
     return RouteDecision("offline", 0.4, "Default offline assistant routing.")
 
 
+class PluginManager:
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        self._lock = threading.Lock()
+        self._plugins = []
+        self._load_errors = []
+        self.reload()
+
+    def _load_module(self, entry_path: Path):
+        module_name = f"brahma_plugin_{entry_path.stem}_{uuid.uuid4().hex}"
+        spec = importlib.util.spec_from_file_location(module_name, entry_path)
+        if not spec or not spec.loader:
+            raise RuntimeError("Invalid plugin entry spec.")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def reload(self):
+        with self._lock:
+            self._plugins = []
+            self._load_errors = []
+            if not self.root.exists():
+                return
+            for plugin_dir in self.root.iterdir():
+                if not plugin_dir.is_dir():
+                    continue
+                manifest_path = plugin_dir / "plugin.json"
+                if not manifest_path.exists():
+                    continue
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except Exception as exc:
+                    self._load_errors.append({
+                        "name": plugin_dir.name,
+                        "error": f"Invalid plugin.json: {exc}",
+                    })
+                    continue
+                entry = str(manifest.get("entry") or "").strip()
+                if not entry:
+                    self._load_errors.append({
+                        "name": manifest.get("name") or plugin_dir.name,
+                        "error": "Missing entry in plugin.json.",
+                    })
+                    continue
+                entry_path = (plugin_dir / entry).resolve()
+                if entry_path.suffix.lower() != ".py":
+                    self._load_errors.append({
+                        "name": manifest.get("name") or plugin_dir.name,
+                        "error": "Only Python (.py) plugins are supported.",
+                    })
+                    continue
+                if not entry_path.exists():
+                    self._load_errors.append({
+                        "name": manifest.get("name") or plugin_dir.name,
+                        "error": f"Entry not found: {entry}",
+                    })
+                    continue
+                try:
+                    module = self._load_module(entry_path)
+                    plugin_obj = getattr(module, "plugin", module)
+                    handler = getattr(plugin_obj, "on_command", None)
+                    if not callable(handler):
+                        raise RuntimeError("Plugin entry must export on_command(text, context).")
+                    self._plugins.append({
+                        "name": manifest.get("name") or plugin_dir.name,
+                        "version": manifest.get("version") or "0.0.0",
+                        "description": manifest.get("description") or "",
+                        "entry": entry,
+                        "dir": str(plugin_dir),
+                        "handler": handler,
+                        "enabled": True,
+                        "error": "",
+                    })
+                except Exception as exc:
+                    self._load_errors.append({
+                        "name": manifest.get("name") or plugin_dir.name,
+                        "error": str(exc),
+                    })
+
+    def _run_handler(self, handler, text: str, context: dict):
+        result = handler(text, context)
+        if asyncio.iscoroutine(result):
+            try:
+                return asyncio.run(result)
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                try:
+                    return loop.run_until_complete(result)
+                finally:
+                    loop.close()
+        return result
+
+    def handle(self, text: str, context: dict):
+        with self._lock:
+            plugins = list(self._plugins)
+        for plugin in plugins:
+            handler = plugin.get("handler")
+            if not callable(handler):
+                continue
+            try:
+                response = self._run_handler(handler, text, context)
+                if response:
+                    return response, plugin
+            except Exception as exc:
+                plugin["error"] = str(exc)
+        return None, None
+
+    def list_plugins(self):
+        with self._lock:
+            plugins = [
+                {
+                    "name": p.get("name"),
+                    "version": p.get("version"),
+                    "description": p.get("description"),
+                    "entry": p.get("entry"),
+                    "dir": p.get("dir"),
+                    "enabled": p.get("enabled", True),
+                    "error": p.get("error", ""),
+                }
+                for p in self._plugins
+            ]
+            errors = list(self._load_errors)
+        for err in errors:
+            plugins.append({
+                "name": err.get("name"),
+                "version": "0.0.0",
+                "description": "",
+                "entry": "",
+                "dir": "",
+                "enabled": False,
+                "error": err.get("error") or "Failed to load plugin.",
+            })
+        return plugins
+
+
 class BridgeUI:
     def __init__(self):
         self.send_callback = None
@@ -140,6 +276,7 @@ class BridgeUI:
         self.gmail_settings = self._load_gmail_settings()
         self.discord_settings = self._load_discord_settings()
         self.browser_agent_bridge = BrowserAgentBridge(Path(__file__).resolve().parent)
+        self.plugin_manager = PluginManager(PLUGINS_DIR)
         self._discord_last_seen = {}
         self._discord_remote_last_seen = {}
         self._discord_remote_warned_channels = set()
@@ -2873,6 +3010,14 @@ p{line-height:1.75}
             response = str(direct_result)
             self.write_log(f"Brahma AI: {response}", mirror=mirror)
             return response
+        plugin_response, plugin_meta = self.plugin_manager.handle(text, {"source": source})
+        if plugin_response:
+            response = str(plugin_response)
+            if plugin_meta:
+                self.write_log(f"[plugin:{plugin_meta.get('name')}] {response}", mirror=mirror)
+            else:
+                self.write_log(f"[plugin] {response}", mirror=mirror)
+            return response
         route = route_command(text, advanced_mode=False)
 
         if self.send_callback and self.live_ready:
@@ -3050,6 +3195,7 @@ p{line-height:1.75}
                 "lastCommand": self._discord_last_command,
                 "lastCommandTs": self._discord_last_command_ts,
             },
+            "plugins": self.plugin_manager.list_plugins(),
             "automation": {
                 "mode": self.automation_mode,
                 "plan": self.automation_plan,
@@ -3289,6 +3435,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                     "automation": UI.get_state().get("automation", {}),
                 })
                 return
+            if self.path == "/api/plugins":
+                self._send_json({
+                    "ok": True,
+                    "plugins": UI.plugin_manager.list_plugins(),
+                })
+                return
             if self.path == "/health":
                 self._send_json({"ok": True, **UI.get_connection_info()})
                 return
@@ -3335,6 +3487,20 @@ class ApiHandler(BaseHTTPRequestHandler):
                         "mode": "direct",
                         "message": direct_result,
                         "engine": "direct_handler",
+                    })
+                    return
+                plugin_response, plugin_meta = UI.plugin_manager.handle(text, {"source": "ui"})
+                if plugin_response:
+                    message = str(plugin_response)
+                    if plugin_meta:
+                        UI.write_log(f"[plugin:{plugin_meta.get('name')}] {message}")
+                    else:
+                        UI.write_log(f"[plugin] {message}")
+                    self._send_json({
+                        "ok": True,
+                        "mode": "plugin",
+                        "message": message,
+                        "engine": "plugin",
                     })
                     return
                 route = route_command(text, advanced_mode=False)
@@ -3401,6 +3567,26 @@ class ApiHandler(BaseHTTPRequestHandler):
                         "remoteChannelIds": list(UI.discord_settings.get("remote_channel_ids") or []),
                     },
                 })
+                return
+
+            if self.path == "/api/plugins/reload":
+                UI.plugin_manager.reload()
+                self._send_json({
+                    "ok": True,
+                    "plugins": UI.plugin_manager.list_plugins(),
+                })
+                return
+
+            if self.path == "/api/plugins/open-folder":
+                try:
+                    PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
+                    if sys.platform == "win32":
+                        os.startfile(str(PLUGINS_DIR))  # type: ignore[attr-defined]
+                    else:
+                        subprocess.Popen(["xdg-open", str(PLUGINS_DIR)])
+                    self._send_json({"ok": True})
+                except Exception as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, 500)
                 return
 
             if self.path == "/api/discord-test":

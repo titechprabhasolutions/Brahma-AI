@@ -6,7 +6,7 @@ Brahma AI supports lightweight plugins so the community can add new skills and b
 
 1. Create a folder under `plugins/` with your plugin name.
 2. Add a `plugin.json` manifest.
-3. Implement your logic in `index.js` (or another entry file).
+3. Implement your logic in `index.py` (or another Python entry file).
 4. Restart Brahma AI.
 
 ## Plugin Manifest
@@ -18,7 +18,7 @@ Brahma AI supports lightweight plugins so the community can add new skills and b
   "name": "example-plugin",
   "version": "1.0.0",
   "description": "A starter plugin for Brahma AI.",
-  "entry": "index.js"
+  "entry": "index.py"
 }
 ```
 
@@ -26,21 +26,17 @@ Brahma AI supports lightweight plugins so the community can add new skills and b
 
 Your entry module should export an object with any of these handlers:
 
-```js
-module.exports = {
-  id: "example-plugin",
-  onCommand: async (text, context) => {
-    if (text.includes("hello plugin")) {
-      return "Plugin says hi!";
-    }
-  }
-};
+```python
+def on_command(text: str, context: dict):
+    if "hello plugin" in text.lower():
+        return "Plugin says hi!"
+    return None
 ```
 
 ### Available fields
 
 - `id` (string): unique plugin identifier
-- `onCommand(text, context)` (async): run when a user enters a command
+- `on_command(text, context)` (sync or async): run when a user enters a command
 
 ## Tips
 
