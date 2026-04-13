@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path
 
+import os
+
 from kasa import Discover
 
 
@@ -12,8 +14,20 @@ def get_base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-BASE_DIR = get_base_dir()
-KASA_CACHE_PATH = BASE_DIR / "config" / "kasa_devices.json"
+def get_config_dir() -> Path:
+    env_dir = os.environ.get("BRAHMA_CONFIG_DIR")
+    if env_dir:
+        return Path(env_dir)
+    # In packaged builds, avoid Program Files and use AppData.
+    if getattr(sys, "frozen", False):
+        appdata = os.environ.get("LOCALAPPDATA")
+        if appdata:
+            return Path(appdata) / "BrahmaAI" / "config"
+    return get_base_dir() / "config"
+
+
+CONFIG_DIR = get_config_dir()
+KASA_CACHE_PATH = CONFIG_DIR / "kasa_devices.json"
 
 
 def _save_devices(devices: list[dict]) -> None:
