@@ -118,6 +118,23 @@ function resolveBackendCommand() {
     return { command: venvPython, args: [backendScript], cwd: projectRoot };
   }
 
+  const userHome = os.homedir();
+  const localAppData = process.env.LOCALAPPDATA || path.join(userHome, 'AppData', 'Local');
+  const pythonCandidates = [
+    path.join(userHome, 'Miniconda3', 'python.exe'),
+    path.join(userHome, 'Anaconda3', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python313', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python312', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python311', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python310', 'python.exe'),
+  ];
+
+  for (const candidate of pythonCandidates) {
+    if (fs.existsSync(candidate)) {
+      return { command: candidate, args: [backendScript], cwd: projectRoot };
+    }
+  }
+
   return { command: 'python', args: [backendScript], cwd: projectRoot };
 }
 
