@@ -59,12 +59,60 @@
           </div>
 
           <div id="authStepApi" class="auth-step hidden">
-            <label class="auth-label">
-              <span>Gemini API Key</span>
-              <input id="onboardingApiKey" type="password" placeholder="AIza..." autocomplete="off" />
-              <a class="auth-help-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get your API key from Google AI Studio →</a>
-              <small id="apiKeyFeedback" class="field-feedback"></small>
-            </label>
+            <div class="provider-manager">
+              <div class="provider-manager-head">
+                <div class="provider-manager-title">AI Providers</div>
+                <div class="provider-manager-subtitle">
+                  Add one or more providers. Brahma will use the Primary first and fallback when it hits limits.
+                </div>
+              </div>
+
+              <div class="provider-manager-row">
+                <label class="auth-label">
+                  <span>Provider</span>
+                  <select id="onboardingProviderSelect" class="auth-select">
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="openai">OpenAI (ChatGPT API)</option>
+                    <option value="grok">Grok (xAI)</option>
+                    <option value="openrouter">OpenRouter</option>
+                  </select>
+                </label>
+                <label class="auth-label provider-key-field">
+                  <span>API Key</span>
+                  <input id="onboardingProviderKey" type="password" placeholder="Paste API key" autocomplete="off" />
+                  <small id="onboardingProviderHelp" class="field-feedback">Keys are stored locally on this device.</small>
+                </label>
+              </div>
+
+              <div id="onboardingProviderModelRow" class="provider-manager-row hidden">
+                <label class="auth-label">
+                  <span>OpenRouter Model (optional)</span>
+                  <input id="onboardingProviderModel" type="text" placeholder="openai/gpt-4o-mini" />
+                  <small class="field-feedback">Leave empty to use a good default.</small>
+                </label>
+              </div>
+
+              <div class="provider-manager-actions">
+                <button id="onboardingProviderAddBtn" class="auth-secondary" type="button">Add / Update Provider</button>
+              </div>
+
+              <div class="provider-list-wrap">
+                <div class="provider-list-title">Configured Providers</div>
+                <div id="onboardingProvidersList" class="provider-list"></div>
+              </div>
+
+              <label class="auth-label">
+                <span>Primary AI</span>
+                <select id="llmPrimaryProvider" class="auth-select">
+                  <option value="gemini">Gemini (Google)</option>
+                  <option value="openai">OpenAI (ChatGPT API)</option>
+                  <option value="grok">Grok (xAI)</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+                <small class="field-feedback">Primary is used first. If it fails or rate-limits, Brahma will try the next provider.</small>
+              </label>
+            </div>
+            <small id="apiKeyFeedback" class="field-feedback"></small>
             <div class="auth-actions-stack">
               <button id="testApiKeyBtn" class="auth-secondary" type="button">Test Connection</button>
               <button id="authSubmit" class="auth-submit" type="submit">Initialize Brahma AI</button>
@@ -169,7 +217,7 @@
       <div id="cursorAssistant" class="cursor-assistant hidden">
         <div class="cursor-assistant-header">
           <span class="cursor-assistant-title">AI</span>
-          <button id="cursorAssistantClose" class="cursor-assistant-close" type="button">×</button>
+          <button id="cursorAssistantClose" class="cursor-assistant-close" type="button">Ã—</button>
         </div>
         <div id="cursorAssistantActions" class="cursor-assistant-actions">
           <button data-action="summarize" type="button">Summarize</button>
@@ -199,6 +247,40 @@
             <label class="voice-field">
               <span>Email</span>
               <input id="profileEmailInput" type="email" placeholder="Signed-in email" readonly />
+            </label>
+            <label class="voice-field">
+              <span>OpenAI API Key</span>
+              <input id="settingsOpenAiKey" type="password" placeholder="sk-..." autocomplete="off" />
+            </label>
+            <label class="voice-field">
+              <span>OpenAI Model</span>
+              <input id="settingsOpenAiModel" type="text" placeholder="gpt-4.1-mini" />
+            </label>
+            <label class="voice-field">
+              <span>Grok API Key</span>
+              <input id="settingsGrokKey" type="password" placeholder="xai-..." autocomplete="off" />
+            </label>
+            <label class="voice-field">
+              <span>Grok Model</span>
+              <input id="settingsGrokModel" type="text" placeholder="grok-2-latest" />
+            </label>
+            <label class="voice-field">
+              <span>OpenRouter API Key</span>
+              <input id="settingsOpenRouterKey" type="password" placeholder="or-..." autocomplete="off" />
+            </label>
+            <label class="voice-field">
+              <span>OpenRouter Model Name</span>
+              <input id="settingsOpenRouterModel" type="text" placeholder="openai/gpt-4o-mini" />
+            </label>
+            <label class="voice-field">
+              <span>Primary Provider</span>
+              <select id="settingsPrimaryProvider">
+                <option value="gemini">Gemini (Google)</option>
+                <option value="openai">OpenAI</option>
+                <option value="grok">Grok (xAI)</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+              <small class="field-hint">If multiple keys are set, Brahma will fallback when the primary hits a limit.</small>
             </label>
             <div class="voice-actions">
               <button id="saveProfileBtn" class="sequence-btn primary" type="button">Save Profile</button>
@@ -297,7 +379,7 @@
           </section>
 
           <section class="settings-block experience-panel">
-            <div class="settings-block-title">Workspace Experience</div>
+            <div class="settings-block-title">AI Providers</div>
             <label class="toggle-field">
               <span>Minimal Mode</span>
               <input id="minimalModeToggle" type="checkbox" />
@@ -305,15 +387,73 @@
             <div id="minimalModeHint" class="voice-status">
               Off: Full dashboard visible. On: only mic, reactor, and command input stay visible.
             </div>
-            <label class="voice-field">
-              <span>Gemini API Key</span>
-              <input id="settingsApiKeyInput" type="password" placeholder="AIza..." autocomplete="off" />
-              <a class="auth-help-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get your API key from Google AI Studio →</a>
+            <label class="toggle-field">
+              <span>Context-aware continuous mode</span>
+              <input id="contextAwareToggle" type="checkbox" />
             </label>
+            <div id="contextAwareHint" class="voice-status">
+              When enabled, Brahma will wrap follow-up commands only if another app is in focus (Chrome, Gmail, etc).
+            </div>
+            <div class="provider-manager settings-provider-manager">
+              <div class="provider-manager-row">
+                <label class="voice-field">
+                  <span>Provider</span>
+                  <select id="settingsProviderSelect" class="auth-select">
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="openai">OpenAI (ChatGPT API)</option>
+                    <option value="grok">Grok (xAI)</option>
+                    <option value="openrouter">OpenRouter</option>
+                  </select>
+                </label>
+                <label class="voice-field provider-key-field">
+                  <span>API Key</span>
+                  <input id="settingsProviderKey" type="password" placeholder="Paste API key" autocomplete="off" />
+                  <a class="auth-help-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get keys -&gt;</a>
+                </label>
+              </div>
+
+              <div id="settingsProviderModelRow" class="provider-manager-row hidden">
+                <label class="voice-field">
+                  <span>OpenRouter Model (optional)</span>
+                  <input id="settingsProviderModel" type="text" placeholder="openai/gpt-4o-mini" />
+                </label>
+              </div>
+
+              <div class="provider-manager-actions">
+                <button id="settingsProviderAddBtn" class="sequence-btn" type="button">Add / Update Provider</button>
+              </div>
+
+              <div class="provider-list-wrap">
+                <div class="provider-list-title">Configured Providers</div>
+                <div id="settingsProvidersList" class="provider-list"></div>
+              </div>
+
+              <label class="voice-field">
+                <span>Primary AI</span>
+                <select id="settingsPrimaryProvider" class="auth-select">
+                  <option value="gemini">Gemini (Google)</option>
+                  <option value="openai">OpenAI (ChatGPT API)</option>
+                  <option value="grok">Grok (xAI)</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+              </label>
+            </div>
             <div class="voice-actions">
-              <button id="settingsApiSaveBtn" class="sequence-btn primary" type="button">Save API Key</button>
+              <button id="settingsApiSaveBtn" class="sequence-btn primary" type="button">Save Providers</button>
             </div>
             <div id="settingsApiStatus" class="voice-status">API key is saved locally on your device.</div>
+          </section>
+
+          <section class="settings-block system-panel">
+            <div class="settings-block-title">System</div>
+            <label class="switch-row">
+              <span>Launch Brahma AI on Windows startup</span>
+              <label class="switch">
+                <input id="launchOnStartupToggle" type="checkbox" />
+                <span class="slider"></span>
+              </label>
+            </label>
+            <div id="launchOnStartupStatus" class="voice-status">Off: you start Brahma manually. On: Brahma opens automatically after login.</div>
           </section>
 
           <section class="settings-block plugins-panel">
@@ -385,29 +525,30 @@
               <div class="core-inner"></div>
             </div>
             <div class="reactor-label">Brahma</div>
+            <div class="reactor-wave" aria-hidden="true"></div>
           </div>
         </div>
         <section class="control-rail floating-controls controls-below-reactor">
           <div class="rail-stack horizontal">
-            <button id="micToggle" class="rail-btn cyan" type="button" aria-label="Microphone">
+            <button id="micToggle" class="rail-btn mono" type="button" aria-label="Microphone">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 1 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v3"/><path d="M8 21h8"/></svg>
             </button>
-            <button id="chatToggle" class="rail-btn cyan active" type="button" aria-label="Code tools">
+            <button id="chatToggle" class="rail-btn mono active" type="button" aria-label="Code tools">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13 5-2 14"/></svg>
             </button>
-            <button id="projectWorkspaceRailBtn" class="rail-btn cyan" type="button" title="Project workspace" aria-label="Project workspace">
+            <button id="projectWorkspaceRailBtn" class="rail-btn mono" type="button" title="Project workspace" aria-label="Project workspace">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/><path d="M3 10h18"/></svg>
             </button>
-            <button id="voiceToggle" class="rail-btn amber" type="button" aria-label="Voice response">
+            <button id="voiceToggle" class="rail-btn mono" type="button" aria-label="Voice response">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M5 12a7 7 0 0 1 14 0"/><path d="M7.5 12a4.5 4.5 0 0 1 9 0"/></svg>
             </button>
-            <button id="developerToggle" class="rail-btn cyan hand" type="button" aria-label="Gesture control">
+            <button id="developerToggle" class="rail-btn mono hand" type="button" aria-label="Gesture control">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11V6a1 1 0 1 1 2 0v4"/><path d="M10 10V5a1 1 0 1 1 2 0v5"/><path d="M12 10V6a1 1 0 1 1 2 0v4"/><path d="M14 11V8a1 1 0 1 1 2 0v6c0 3-2 5-5 5h-1c-2.8 0-5-2.2-5-5v-3a1 1 0 1 1 2 0v2"/></svg>
             </button>
-            <button id="kasaToggle" class="rail-btn cyan" type="button" aria-label="Home devices">
+            <button id="kasaToggle" class="rail-btn mono" type="button" aria-label="Home devices">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 11 8-6 8 6"/><path d="M7 10.5V19h10v-8.5"/><path d="M10 19v-5h4v5"/></svg>
             </button>
-            <button id="cadToggle" class="rail-btn cyan" type="button" aria-label="CAD studio">
+            <button id="cadToggle" class="rail-btn mono" type="button" aria-label="CAD studio">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/><path d="M9 9h6v6H9z"/></svg>
             </button>
           </div>
@@ -496,8 +637,8 @@
       </section>
 
       <div class="sequence-toggle-dock">
-        <button id="sequenceOpenBtn" class="sequence-toggle-btn" type="button" aria-label="Open sequence builder" title="Open sequence builder">◀</button>
-        <button id="sequenceCloseBtn" class="sequence-toggle-btn hidden" type="button" aria-label="Close sequence builder" title="Close sequence builder">▶</button>
+        <button id="sequenceOpenBtn" class="sequence-toggle-btn" type="button" aria-label="Open sequence builder" title="Open sequence builder">&lt;</button>
+        <button id="sequenceCloseBtn" class="sequence-toggle-btn hidden" type="button" aria-label="Close sequence builder" title="Close sequence builder">&gt;</button>
       </div>
 
     </aside>
@@ -582,4 +723,3 @@
 <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/STLLoader.js"></script>
 </body>
 </html>
-

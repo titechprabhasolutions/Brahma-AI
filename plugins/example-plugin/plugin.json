@@ -1,6 +1,0 @@
-{
-  "name": "example-plugin",
-  "version": "1.0.0",
-  "description": "A starter plugin for Brahma AI.",
-  "entry": "index.py"
-}

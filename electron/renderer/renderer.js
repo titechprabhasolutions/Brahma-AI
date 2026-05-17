@@ -1,4 +1,4 @@
-﻿import {
+import {
   createFirebaseUser,
   deleteCurrentFirebaseUser,
   signInFirebaseUser,
@@ -56,6 +56,12 @@ const apiInput = document.getElementById('apiInput');
 const apiHint = document.getElementById('apiHint');
 const setupPanel = document.getElementById('setupPanel');
 const shell = document.querySelector('.shell');
+const reactorStage = document.querySelector('.reactor-stage');
+// Native window frame enabled: no custom titlebar controls.
+const titlebarStatus = null;
+const winMinBtn = null;
+const winMaxBtn = null;
+const winCloseBtn = null;
 const sidebarToggle = document.getElementById('sidebarToggle');
 const settingsTabBtn = document.getElementById('settingsTabBtn');
 const cameraTabBtn = document.getElementById('cameraTabBtn');
@@ -78,6 +84,7 @@ const voiceToggle = document.getElementById('voiceToggle');
 const developerToggle = document.getElementById('developerToggle');
 const kasaToggle = document.getElementById('kasaToggle');
 const cadToggle = document.getElementById('cadToggle');
+const contextAwareToggle = document.getElementById('contextAwareToggle');
 const voiceProfile = document.getElementById('voiceProfile');
 const elevenLabsApiKey = document.getElementById('elevenLabsApiKey');
 const elevenLabsVoiceId = document.getElementById('elevenLabsVoiceId');
@@ -102,9 +109,17 @@ const discordLog = document.getElementById('discordLog');
 const reactorDiscordBadge = document.getElementById('reactorDiscordBadge');
 const minimalModeToggle = document.getElementById('minimalModeToggle');
 const minimalModeHint = document.getElementById('minimalModeHint');
-const settingsApiKeyInput = document.getElementById('settingsApiKeyInput');
+const settingsProviderSelect = document.getElementById('settingsProviderSelect');
+const settingsProviderKey = document.getElementById('settingsProviderKey');
+const settingsProviderModelRow = document.getElementById('settingsProviderModelRow');
+const settingsProviderModel = document.getElementById('settingsProviderModel');
+const settingsProviderAddBtn = document.getElementById('settingsProviderAddBtn');
+const settingsProvidersList = document.getElementById('settingsProvidersList');
+const settingsPrimaryProvider = document.getElementById('settingsPrimaryProvider');
 const settingsApiSaveBtn = document.getElementById('settingsApiSaveBtn');
 const settingsApiStatus = document.getElementById('settingsApiStatus');
+const launchOnStartupToggle = document.getElementById('launchOnStartupToggle');
+const launchOnStartupStatus = document.getElementById('launchOnStartupStatus');
 const pluginList = document.getElementById('pluginList');
 const pluginReloadBtn = document.getElementById('pluginReloadBtn');
 const pluginOpenFolderBtn = document.getElementById('pluginOpenFolderBtn');
@@ -193,7 +208,13 @@ const authStepAccount = document.getElementById('authStepAccount');
 const authStepApi = document.getElementById('authStepApi');
 const authEmail = document.getElementById('authEmail');
 const authPassword = document.getElementById('authPassword');
-const onboardingApiKey = document.getElementById('onboardingApiKey');
+const llmPrimaryProvider = document.getElementById('llmPrimaryProvider');
+const onboardingProviderSelect = document.getElementById('onboardingProviderSelect');
+const onboardingProviderKey = document.getElementById('onboardingProviderKey');
+const onboardingProviderModelRow = document.getElementById('onboardingProviderModelRow');
+const onboardingProviderModel = document.getElementById('onboardingProviderModel');
+const onboardingProviderAddBtn = document.getElementById('onboardingProviderAddBtn');
+const onboardingProvidersList = document.getElementById('onboardingProvidersList');
 const authMessage = document.getElementById('authMessage');
 const authSubmit = document.getElementById('authSubmit');
 const authContinueBtn = document.getElementById('authContinueBtn');
@@ -235,6 +256,7 @@ let appState = {
   projectWorkspacePath: '',
   projectWorkspaceName: '',
   minimalMode: false,
+  contextAwareEnabled: false,
   cacaMemory: null,
 };
 let liveUserEntry = null;
@@ -252,6 +274,265 @@ let onboardingStep = 'account';
 let tutorialStepIndex = 0;
 let greetingSpoken = false;
 let apiKeyHydrated = false;
+
+// Native frame: nothing to wire.
+
+function getUserKeyBucket(state) {
+  if (!state || typeof state !== 'object') return null;
+  const id = String(state.firebaseUserId || '').trim();
+  const email = String(state.userEmail || '').trim().toLowerCase();
+  if (!id && !email) return null;
+  return { id, email };
+}
+
+function readPersistedApiKeyForUser(state) {
+  const bucket = getUserKeyBucket(state);
+  const store = state.userApiKeys && typeof state.userApiKeys === 'object' ? state.userApiKeys : {};
+  // Local fallback key (works even when Firebase isn't configured / user not logged in).
+  const local = String(store.__local__ || '').trim();
+  if (!bucket) return local;
+  const byId = bucket.id ? String(store[bucket.id] || '').trim() : '';
+  if (byId) return byId;
+  const byEmail = bucket.email ? String(store[bucket.email] || '').trim() : '';
+  return byEmail || local;
+}
+
+async function persistApiKeyForCurrentUser(key) {
+  const cleanKey = String(key || '').trim();
+  if (!cleanKey) return;
+  const bucket = getUserKeyBucket(appState);
+  const next = { ...(appState.userApiKeys && typeof appState.userApiKeys === 'object' ? appState.userApiKeys : {}) };
+  // Always store a local fallback key that can be used without Firebase login.
+  next.__local__ = cleanKey;
+  if (bucket?.id) next[bucket.id] = cleanKey;
+  if (bucket?.email) next[bucket.email] = cleanKey;
+  await saveAppState({ userApiKeys: next, geminiApiKey: cleanKey });
+  appState.userApiKeys = next;
+  appState.geminiApiKey = cleanKey;
+}
+
+function ensureLlmConfigState() {
+  if (!appState.llmConfig || typeof appState.llmConfig !== 'object') {
+    appState.llmConfig = { primary_provider: 'gemini', providers: {} };
+  }
+  if (!appState.llmConfig.providers || typeof appState.llmConfig.providers !== 'object') {
+    appState.llmConfig.providers = {};
+  }
+  // Back-compat: bring the legacy Gemini key into the providers map.
+  const legacyGemini = String(appState.geminiApiKey || '').trim();
+  if (legacyGemini && !appState.llmConfig.providers.gemini) {
+    appState.llmConfig.providers.gemini = { api_key: legacyGemini, model: '' };
+  }
+  appState.llmConfig.primary_provider = String(appState.llmConfig.primary_provider || 'gemini');
+  return appState.llmConfig;
+}
+
+function providerLabel(provider) {
+  switch (String(provider || '').toLowerCase()) {
+    case 'gemini': return 'Gemini';
+    case 'openai': return 'OpenAI';
+    case 'grok': return 'Grok';
+    case 'openrouter': return 'OpenRouter';
+    default: return String(provider || 'Provider');
+  }
+}
+
+const PROVIDER_ORDER = ['gemini', 'openai', 'grok', 'openrouter'];
+
+function isOpenRouter(provider) {
+  return String(provider || '').toLowerCase() === 'openrouter';
+}
+
+function syncProviderManagerUi(scope) {
+  const isOnboarding = scope === 'onboarding';
+  const select = isOnboarding ? onboardingProviderSelect : settingsProviderSelect;
+  const modelRow = isOnboarding ? onboardingProviderModelRow : settingsProviderModelRow;
+  if (!select || !modelRow) return;
+  modelRow.classList.toggle('hidden', !isOpenRouter(select.value));
+}
+
+function ensureValidPrimaryProvider() {
+  const cfg = ensureLlmConfigState();
+  const providers = cfg.providers || {};
+  const keys = Object.keys(providers);
+  if (!keys.length) return;
+  const primary = String(cfg.primary_provider || '').trim();
+  if (primary && providers[primary]) return;
+  cfg.primary_provider = keys[0];
+}
+
+function renderProviderList(scope) {
+  const cfg = ensureLlmConfigState();
+  ensureValidPrimaryProvider();
+
+  const isOnboarding = scope === 'onboarding';
+  const listEl = isOnboarding ? onboardingProvidersList : settingsProvidersList;
+  const primarySelect = isOnboarding ? llmPrimaryProvider : settingsPrimaryProvider;
+  if (!listEl) return;
+
+  const providers = cfg.providers && typeof cfg.providers === 'object' ? cfg.providers : {};
+  const providerKeys = Object.keys(providers)
+    .sort((a, b) => PROVIDER_ORDER.indexOf(a) - PROVIDER_ORDER.indexOf(b));
+
+  listEl.innerHTML = '';
+  if (!providerKeys.length) {
+    const empty = document.createElement('div');
+    empty.className = 'provider-empty';
+    empty.textContent = 'No providers configured yet.';
+    listEl.appendChild(empty);
+  } else {
+    providerKeys.forEach((provider) => {
+      const info = providers[provider] || {};
+      const rawKey = String(info.api_key || '').trim();
+      const tail = rawKey ? rawKey.slice(-4) : '';
+      const model = String(info.model || '').trim();
+
+      const row = document.createElement('div');
+      row.className = 'provider-item';
+      row.dataset.provider = provider;
+
+      const left = document.createElement('div');
+      left.className = 'provider-item-left';
+
+      const name = document.createElement('div');
+      name.className = 'provider-item-name';
+      name.textContent = providerLabel(provider);
+
+      const meta = document.createElement('div');
+      meta.className = 'provider-item-meta';
+      meta.textContent = tail ? `Key ••••${tail}${isOpenRouter(provider) && model ? `  |  ${model}` : ''}` : 'Key set';
+
+      left.appendChild(name);
+      left.appendChild(meta);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'provider-remove-btn';
+      removeBtn.title = 'Remove provider';
+      removeBtn.setAttribute('aria-label', 'Remove provider');
+      removeBtn.dataset.provider = provider;
+      removeBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9zM7 9h2v10H7V9z"/>
+        </svg>
+      `;
+
+      row.appendChild(left);
+      row.appendChild(removeBtn);
+      listEl.appendChild(row);
+    });
+  }
+
+  if (primarySelect && document.activeElement !== primarySelect) {
+    primarySelect.value = String(cfg.primary_provider || 'gemini');
+  }
+}
+
+function removeProvider(provider) {
+  const cfg = ensureLlmConfigState();
+  const key = String(provider || '').trim();
+  if (!key) return;
+  if (cfg.providers && cfg.providers[key]) {
+    delete cfg.providers[key];
+  }
+  if (cfg.primary_provider === key) {
+    cfg.primary_provider = Object.keys(cfg.providers || {})[0] || 'gemini';
+  }
+}
+
+async function addOrUpdateProviderFromUi(scope) {
+  const isOnboarding = scope === 'onboarding';
+  const select = isOnboarding ? onboardingProviderSelect : settingsProviderSelect;
+  const keyInput = isOnboarding ? onboardingProviderKey : settingsProviderKey;
+  const modelInput = isOnboarding ? onboardingProviderModel : settingsProviderModel;
+  if (!select || !keyInput) return;
+
+  const provider = String(select.value || '').trim();
+  const apiKey = String(keyInput.value || '').trim();
+  if (!provider || !apiKey) {
+    appendLocalLog('[error] Provider and API key are required.');
+    return;
+  }
+
+  const cfg = ensureLlmConfigState();
+  const model = isOpenRouter(provider) ? String(modelInput?.value || '').trim() : '';
+  cfg.providers[provider] = { api_key: apiKey, model };
+  if (!cfg.primary_provider) cfg.primary_provider = provider;
+
+  // Keep legacy per-account Gemini storage (still useful as a local fallback).
+  if (provider === 'gemini') {
+    await persistApiKeyForCurrentUser(apiKey);
+  }
+
+  renderProviderList('onboarding');
+  renderProviderList('settings');
+  validateApiKey(false);
+}
+
+function collectLlmConfigFromInputs({ from } = { from: 'settings' }) {
+  const cfg = ensureLlmConfigState();
+  const primary = String((from === 'onboarding' ? llmPrimaryProvider : settingsPrimaryProvider)?.value || '').trim();
+  if (primary) cfg.primary_provider = primary;
+  ensureValidPrimaryProvider();
+  return {
+    primary_provider: String(cfg.primary_provider || 'gemini'),
+    providers: { ...(cfg.providers || {}) },
+  };
+}
+
+async function saveLlmConfigToBackend(config) {
+  const res = await fetch(`${backendUrl}/api/llm-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    const reason = String(data?.error || '').trim();
+    if (reason === 'not_found' || res.status === 404) {
+      throw new Error('Backend is missing /api/llm-config. Restart Brahma AI (and ensure the backend is updated).');
+    }
+    throw new Error(reason || 'Failed to save provider configuration.');
+  }
+  return data;
+}
+
+async function persistLlmConfigLocal(config) {
+  await saveAppState({ llmConfig: config });
+  appState.llmConfig = config;
+}
+
+async function waitForBackendHealth(timeoutMs = 12000) {
+  const startedAt = Date.now();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const res = await fetch(`${backendUrl}/health`, { cache: 'no-store' });
+      if (res.ok) return true;
+    } catch (_err) {
+      // ignore and retry
+    }
+    if (Date.now() - startedAt > timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
+async function hydrateBackendApiKeyIfNeeded(force = false) {
+  const key = String(appState.geminiApiKey || '').trim();
+  if (!key) return false;
+  if (apiKeyHydrated && !force) return true;
+  try {
+    await fetch(`${backendUrl}/api/api-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    apiKeyHydrated = true;
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
 // Show splash by default; other overlays stay hidden until flow triggers them.
 onboardingOverlay?.classList.add('hidden');
 bootOverlay?.classList.add('hidden');
@@ -266,6 +547,7 @@ let taskUiHideTimer = null;
 let forcingMicEnable = false;
 const SEQUENCE_PANEL_STORAGE_KEY = 'brahma-sequence-panel-open';
 const COMMAND_STREAM_STORAGE_KEY = 'brahma-command-stream-open';
+const STREAM_TAB_STORAGE_KEY = 'brahma-stream-tab';
 const ROUTINES_STORAGE_KEY = 'brahma-routines-v1';
 const HIDDEN_DEFAULT_ROUTINES_KEY = 'brahma-hidden-default-routines-v1';
 const DEFAULT_ROUTINES = [
@@ -342,10 +624,94 @@ function shouldShowInChat(text = '') {
   return false;
 }
 
+// Speech readback (Edge TTS via backend). We keep a simple queue so long replies
+// don't overlap and we avoid hammering the backend with concurrent TTS calls.
+let speechQueue = [];
+let speechInFlight = false;
+
+function stripSpeechPrefix(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  // Normalize common log prefixes so readback sounds natural.
+  if (/^brahma ai:/i.test(raw)) return raw.replace(/^brahma ai:\s*/i, '').trim();
+  if (/^\[ai\]/i.test(raw)) return raw.replace(/^\[ai\]\s*/i, '').trim();
+  if (/^sys:/i.test(raw)) return raw.replace(/^sys:\s*/i, '').trim();
+  if (/^you:/i.test(raw)) return raw.replace(/^you:\s*/i, '').trim();
+  if (/^\[(sys|browser|error|adv|file|cad|auto)\]/i.test(raw)) {
+    return raw.replace(/^\[(sys|browser|error|adv|file|cad|auto)\]\s*/i, '').trim();
+  }
+  return raw;
+}
+
+function isCommandLikeText(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return false;
+  const lower = raw.toLowerCase();
+  // If user explicitly says it's a command, treat as command.
+  if (/\b(do|run|open|start|stop|download|create|delete|remove|install|set|change|turn on|turn off|enable|disable|optimize|search|play|send|reply|email|gmail|discord|steam)\b/.test(lower)) {
+    return true;
+  }
+  // Imperative style: starts with a verb.
+  if (/^(open|start|run|download|create|make|build|delete|remove|set|change|turn|enable|disable|optimize|search|play|send|reply)\b/.test(lower)) {
+    return true;
+  }
+  return false;
+}
+
+function toSafeChatOrCommand(text = '', { raw = '' } = {}) {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return cleaned;
+  // If it doesn't look like a command, force a conversational response (no tools).
+  // This prevents "hi/hello/how are you" from being executed as an automation task.
+  if (!isCommandLikeText(raw || cleaned)) {
+    return `Just reply conversationally. Do not run tools, automations, or system actions.\n\nUser message: ${raw || cleaned}`;
+  }
+  return cleaned;
+}
+
+async function drainSpeechQueue() {
+  if (speechInFlight) return;
+  const next = speechQueue.shift();
+  if (!next) return;
+  speechInFlight = true;
+  let kill = null;
+  try {
+    // Backend TTS can take time; guard the UI against hanging requests.
+    const controller = new AbortController();
+    kill = setTimeout(() => controller.abort(), 25000);
+    await fetch(`${backendUrl}/api/speak`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: next }),
+      signal: controller.signal,
+    });
+  } catch (_err) {
+    // Ignore speech errors; UI should still function normally.
+  } finally {
+    if (kill) clearTimeout(kill);
+    speechInFlight = false;
+    if (speechQueue.length) {
+      setTimeout(drainSpeechQueue, 180);
+    }
+  }
+}
+
+function enqueueSpeech(text = '') {
+  const clean = stripSpeechPrefix(text);
+  if (!clean) return;
+  // Keep it reasonable; huge paragraphs become annoying and slow.
+  const clipped = clean.length > 520 ? `${clean.slice(0, 520)}...` : clean;
+  speechQueue.push(clipped);
+  if (speechQueue.length > 4) speechQueue = speechQueue.slice(-4);
+  void drainSpeechQueue();
+}
+
 function appendLocalLog(text, type = 'sys') {
   const shouldPin = shouldStickLogToBottom();
   if (shouldShowInChat(text)) {
     appendEntry(logList, text, type);
+    // Speak everything shown in chat (user + AI), as requested.
+    enqueueSpeech(text);
   }
   if (shouldIncludeInSystemLogs(text)) {
     appendEntry(systemLogList, text, type);
@@ -467,6 +833,12 @@ function normalizeActiveApp(activeWindow) {
   const url = String(activeWindow.url || '').trim().toLowerCase();
   const ownerLower = owner.toLowerCase();
   const titleLower = title.toLowerCase();
+
+  // Ignore Brahma itself as "active context" so normal commands don't get wrapped
+  // in context-aware mode just because the app window is focused.
+  if (ownerLower.includes('brahma') || titleLower.includes('brahma ai') || titleLower === 'brahma') {
+    return { appKey: 'idle', appName: 'Idle', title: '', owner, suggestions: [] };
+  }
 
   let appKey = 'desktop';
   let appName = owner || 'Desktop';
@@ -702,6 +1074,7 @@ function renderLogs(logs) {
     const kind = classify(entry.text);
     if (shouldShowInChat(entry.text)) {
       appendEntry(logList, entry.text, kind);
+      enqueueSpeech(entry.text);
     }
     if (shouldIncludeInSystemLogs(entry.text)) {
       appendEntry(systemLogList, entry.text, kind);
@@ -814,7 +1187,7 @@ function hydrateVoiceSettings(settings = {}, capabilities = {}) {
     `Piper ${capabilities.piper ? 'ready' : 'not ready'}`,
   ];
   if (voiceStatus) {
-    voiceStatus.textContent = availability.join(' â€¢ ');
+    voiceStatus.textContent = availability.join(' | ');
   }
 }
 
@@ -844,7 +1217,15 @@ function hydrateDiscordSettings(settings = {}) {
 }
 
 function setStatusText(status) {
-  statusValue.textContent = String(status || 'ONLINE').toUpperCase();
+  const next = String(status || 'ONLINE').toUpperCase();
+  statusValue.textContent = next;
+  // Drive state-aware UI (reactor + subtle global effects).
+  if (shell) {
+    shell.dataset.aiState = next;
+  }
+  if (reactorStage) {
+    reactorStage.dataset.aiState = next;
+  }
 }
 
 function syncSidebarToggle() {
@@ -1198,13 +1579,14 @@ function showTransientTaskUi(durationMs = 5000) {
 }
 
 function syncSettingsApiUi() {
-  if (settingsApiKeyInput && document.activeElement !== settingsApiKeyInput) {
-    settingsApiKeyInput.value = String(appState.geminiApiKey || '').trim();
-  }
+  renderProviderList('settings');
+  syncProviderManagerUi('settings');
+  const cfg = ensureLlmConfigState();
+  const count = Object.keys(cfg.providers || {}).length;
   if (settingsApiStatus) {
-    settingsApiStatus.textContent = appState.geminiApiKey
-      ? 'API key saved locally. You can replace it anytime.'
-      : 'No API key saved yet. Paste a key and click Save API Key.';
+    settingsApiStatus.textContent = count
+      ? `Configured providers: ${count}. Keys are stored locally on this device.`
+      : 'No providers configured yet. Add an API key above.';
   }
 }
 
@@ -1438,7 +1820,7 @@ async function runRoutine(routine) {
   }
 }
 
-function setStreamTab(nextTab = 'commands') {
+function setStreamTab(nextTab = 'commands', { persist = true } = {}) {
   streamTab = nextTab;
   const tabMap = {
     commands: [commandTabBtn, commandTabPane],
@@ -1450,6 +1832,13 @@ function setStreamTab(nextTab = 'commands') {
     btn?.classList.toggle('active', active);
     pane?.classList.toggle('active', active);
   });
+  if (persist) {
+    try {
+      localStorage.setItem(STREAM_TAB_STORAGE_KEY, nextTab);
+    } catch (_error) {
+      // ignore storage errors
+    }
+  }
 }
 
 function updateActiveTask(state = {}) {
@@ -1528,13 +1917,16 @@ function ensureRightPanelToggles() {
 
 function initializeSequenceBuilderState() {
   let savedOpen = false;
+  let savedStreamOpen = true;
+  let savedTab = 'commands';
   try {
     savedOpen = localStorage.getItem(SEQUENCE_PANEL_STORAGE_KEY) === '1';
-  } catch (_error) {}
-  let savedStreamOpen = true;
-  try {
-    const raw = localStorage.getItem(COMMAND_STREAM_STORAGE_KEY);
-    savedStreamOpen = raw === null ? true : raw === '1';
+    const rawStream = localStorage.getItem(COMMAND_STREAM_STORAGE_KEY);
+    savedStreamOpen = rawStream === null ? true : rawStream === '1';
+    const rawTab = localStorage.getItem(STREAM_TAB_STORAGE_KEY);
+    if (['commands', 'sequences', 'logs'].includes(rawTab)) {
+      savedTab = rawTab;
+    }
   } catch (_error) {}
   ensureRightPanelToggles();
   if (streamOpenBtn) streamOpenBtn.innerHTML = '&#9664;';
@@ -1543,7 +1935,9 @@ function initializeSequenceBuilderState() {
   if (sequenceCloseBtn) sequenceCloseBtn.innerHTML = '&#9654;';
   setCommandStreamOpen(savedStreamOpen, { persist: false });
   setSequenceBuilderOpen(savedOpen, { persist: false });
-  setStreamTab(savedOpen ? 'sequences' : 'commands');
+  // Always default to Commands on boot. This prevents the command stream from
+  // getting stuck on Sequences due to persisted state or layout changes.
+  setStreamTab('commands', { persist: false });
 }
 
 function showBrowserCamera() {
@@ -1648,7 +2042,7 @@ function createToolPopup(name, url) {
   actions.className = 'tool-actions';
   const minBtn = document.createElement('button');
   minBtn.className = 'tool-btn';
-  minBtn.textContent = 'â€“';
+  minBtn.textContent = '-';
   minBtn.onclick = () => wrap.classList.toggle('minimized');
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tool-btn';
@@ -1887,7 +2281,7 @@ function createCadPopup(initialPrompt = '', autoGenerate = false) {
           <button class="cad-download-stl" disabled>Download STL</button>
           <button class="cad-download-step" disabled>Download STEP</button>
         </div>
-        <div class="cad-status">Waiting for promptâ€¦</div>
+        <div class="cad-status">Waiting for prompt...</div>
       </div>
     </div>
   `;
@@ -2124,6 +2518,7 @@ async function sendCommand(text, options = {}) {
   if (!payload) return;
   trackContextMemory(payload);
   const contextualPayload = buildContextAwareCommand(payload, options);
+  const finalPayload = toSafeChatOrCommand(contextualPayload, { raw: payload });
   showTransientTaskUi(5000);
   if (flowCommandText) {
     flowCommandText.textContent = payload.length > 64 ? `${payload.slice(0, 61)}...` : payload;
@@ -2142,7 +2537,7 @@ async function sendCommand(text, options = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: contextualPayload,
+        text: finalPayload,
         projectWorkspacePath: appState.projectWorkspacePath || '',
         projectWorkspaceName: appState.projectWorkspaceName || '',
       }),
@@ -2276,6 +2671,10 @@ function syncOnboardingStep() {
   const isApi = onboardingStep === 'api';
   authStepAccount?.classList.toggle('hidden', isApi);
   authStepApi?.classList.toggle('hidden', !isApi);
+  if (isApi) {
+    syncProviderManagerUi('onboarding');
+    renderProviderList('onboarding');
+  }
   if (onboardingStepLabel) {
     onboardingStepLabel.textContent = isApi ? 'Step 2 / 2' : 'Step 1 / 2';
   }
@@ -2297,14 +2696,21 @@ function validateAccountInputs() {
 }
 
 function validateApiKey(showEmpty = false) {
-  const key = onboardingApiKey?.value?.trim() || '';
-  const looksValid = /^AIza[0-9A-Za-z\-_]{20,}$/.test(key);
-  if (!key && !showEmpty) {
+  const cfg = ensureLlmConfigState();
+  const keys = Object.values(cfg.providers || {})
+    .map((p) => String(p?.api_key || '').trim())
+    .filter(Boolean);
+
+  if (!keys.length && !showEmpty) {
     setFieldFeedback(apiKeyFeedback, '');
     return false;
   }
-  setFieldFeedback(apiKeyFeedback, looksValid ? 'Gemini API key format looks valid' : 'Enter a valid Gemini API key', looksValid ? 'success' : 'error');
-  return looksValid;
+  if (!keys.length) {
+    setFieldFeedback(apiKeyFeedback, 'Enter at least one provider API key.', 'error');
+    return false;
+  }
+  setFieldFeedback(apiKeyFeedback, `Ready. Configured providers: ${keys.length}.`, 'success');
+  return true;
 }
 
 const tutorialSteps = [
@@ -2452,6 +2858,9 @@ function setAuthMessage(text, type = '') {
 
 function normalizeAuthError(message) {
   const text = String(message || '').toUpperCase();
+  if (text.trim() === 'NOT_FOUND' || text.includes('"ERROR":"NOT_FOUND"') || text.includes('ERROR: NOT_FOUND')) {
+    return 'Backend endpoint was not found. This usually means the backend is outdated or still starting. Please restart Brahma AI.';
+  }
   if (text.includes('CONFIGURATION NOT FOUND')) {
     return 'Firebase Auth is not configured for this project yet. Enable Email/Password or Google sign-in in Firebase Console.';
   }
@@ -2471,14 +2880,46 @@ async function loadAppState() {
       userEmail: '',
       firebaseUserId: '',
       geminiApiKey: '',
+      userApiKeys: {},
       userName: '',
       userPhotoUrl: '',
       projectWorkspacePath: '',
       projectWorkspaceName: '',
       minimalMode: false,
+      contextAwareEnabled: false,
       cacaMemory: null,
     };
   }
+
+  // Ensure the store exists, even for older app-state.json files.
+  if (!appState.userApiKeys || typeof appState.userApiKeys !== 'object') {
+    appState.userApiKeys = {};
+  }
+
+  if (typeof appState.contextAwareEnabled !== 'boolean') {
+    appState.contextAwareEnabled = false;
+  }
+
+  // If we have a logged-in user, prefer that user's stored key.
+  const restoredKey = readPersistedApiKeyForUser(appState);
+  if (restoredKey) {
+    appState.geminiApiKey = restoredKey;
+  }
+
+  // Back-compat: ensure llmConfig exists and hydrate it from stored keys if missing.
+  if (!appState.llmConfig || typeof appState.llmConfig !== 'object') {
+    appState.llmConfig = {
+      primary_provider: 'gemini',
+      providers: {},
+    };
+  }
+  if (!appState.llmConfig.providers || typeof appState.llmConfig.providers !== 'object') {
+    appState.llmConfig.providers = {};
+  }
+  if (appState.geminiApiKey && !appState.llmConfig.providers.gemini) {
+    appState.llmConfig.providers.gemini = { api_key: String(appState.geminiApiKey || '').trim(), model: '' };
+  }
+
   const persistedContext = appState?.cacaMemory && typeof appState.cacaMemory === 'object'
     ? appState.cacaMemory
     : null;
@@ -2508,6 +2949,26 @@ async function loadAppState() {
   minimalMode = !!appState.minimalMode;
   if (minimalModeToggle) {
     minimalModeToggle.checked = minimalMode;
+  }
+  if (contextAwareToggle) {
+    contextAwareToggle.checked = !!appState.contextAwareEnabled;
+  }
+  // Startup toggle: hydrate from OS state, fallback to app-state.
+  if (launchOnStartupToggle) {
+    try {
+      const res = await brahmaBridge.getLaunchOnStartup();
+      const enabled = res && res.ok ? !!res.enabled : !!appState.launchOnStartup;
+      launchOnStartupToggle.checked = enabled;
+      appState.launchOnStartup = enabled;
+      if (launchOnStartupStatus) {
+        launchOnStartupStatus.textContent = enabled
+          ? 'Enabled: Brahma will open automatically after Windows login.'
+          : 'Disabled: Brahma will not auto-start.';
+      }
+      await saveAppState({ launchOnStartup: enabled });
+    } catch (_err) {
+      launchOnStartupToggle.checked = !!appState.launchOnStartup;
+    }
   }
   syncSettingsApiUi();
   renderUserProfile();
@@ -2557,17 +3018,8 @@ async function pollState() {
     return;
   }
   try {
-    if (!state.apiKeyReady && appState.geminiApiKey && !apiKeyHydrated) {
-      try {
-        await fetch(`${backendUrl}/api/api-key`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: appState.geminiApiKey }),
-        });
-        apiKeyHydrated = true;
-      } catch (_) {
-        // ignore; UI will still prompt
-      }
+    if (!state.apiKeyReady && appState.geminiApiKey) {
+      await hydrateBackendApiKeyIfNeeded(false);
     }
     setStatusText(state.status);
     gestureEnabled = !!state.gestureEnabled;
@@ -2777,13 +3229,17 @@ apiForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const key = apiInput.value.trim();
   if (!key) return;
-  await fetch(`${backendUrl}/api/api-key`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key }),
-  });
+  // Persist locally first so the key is never lost even if backend is still booting.
+  await persistApiKeyForCurrentUser(key);
+  const healthy = await waitForBackendHealth(8000);
+  if (healthy) {
+    await fetch(`${backendUrl}/api/api-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+  }
   apiInput.value = '';
-   await saveAppState({ geminiApiKey: key });
   apiKeyHydrated = true;
   syncSettingsApiUi();
   await pollState();
@@ -2793,33 +3249,68 @@ minimalModeToggle?.addEventListener('change', async () => {
   await setMinimalMode(!!minimalModeToggle.checked, { persist: true, forceMic: true });
 });
 
-settingsApiSaveBtn?.addEventListener('click', async () => {
-  const key = String(settingsApiKeyInput?.value || '').trim();
-  if (!key) {
-    if (settingsApiStatus) settingsApiStatus.textContent = 'Please enter a valid Gemini API key.';
-    return;
-  }
+contextAwareToggle?.addEventListener('change', async () => {
+  const enabled = !!contextAwareToggle.checked;
+  appState.contextAwareEnabled = enabled;
+  await saveAppState({ contextAwareEnabled: enabled });
+  appendLocalLog(`[sys] Context-aware continuous mode ${enabled ? 'enabled' : 'disabled'}.`);
+});
+
+launchOnStartupToggle?.addEventListener('change', async () => {
+  const enabled = !!launchOnStartupToggle.checked;
   try {
-    if (settingsApiStatus) settingsApiStatus.textContent = 'Saving API key...';
-    const res = await fetch(`${backendUrl}/api/api-key`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
-    if (!res.ok) {
-      throw new Error('Could not save API key.');
+    if (launchOnStartupStatus) {
+      launchOnStartupStatus.textContent = enabled ? 'Enabling startup...' : 'Disabling startup...';
     }
-    await saveAppState({ geminiApiKey: key });
-    appState.geminiApiKey = key;
+    const res = await brahmaBridge.setLaunchOnStartup(enabled);
+    const finalEnabled = res && res.ok ? !!res.enabled : enabled;
+    await saveAppState({ launchOnStartup: finalEnabled });
+    appState.launchOnStartup = finalEnabled;
+    if (launchOnStartupStatus) {
+      launchOnStartupStatus.textContent = finalEnabled
+        ? 'Enabled: Brahma will open automatically after Windows login.'
+        : 'Disabled: Brahma will not auto-start.';
+    }
+    appendLocalLog(finalEnabled ? '[sys] Enabled startup launch.' : '[sys] Disabled startup launch.');
+  } catch (_error) {
+    launchOnStartupToggle.checked = !!appState.launchOnStartup;
+    if (launchOnStartupStatus) launchOnStartupStatus.textContent = 'Could not change startup setting.';
+    appendLocalLog('[error] Failed to update startup launch setting.');
+  }
+});
+
+settingsApiSaveBtn?.addEventListener('click', async () => {
+  try {
+    const cfg = collectLlmConfigFromInputs({ from: 'settings' });
+    if (!cfg || !cfg.providers || !Object.keys(cfg.providers).length) {
+      if (settingsApiStatus) settingsApiStatus.textContent = 'Please enter at least one provider API key.';
+      return;
+    }
+
+    if (settingsApiStatus) settingsApiStatus.textContent = 'Saving providers...';
+
+    // Keep legacy per-account Gemini storage.
+    if (cfg.providers?.gemini?.api_key) {
+      await persistApiKeyForCurrentUser(cfg.providers.gemini.api_key);
+    }
+
+    await persistLlmConfigLocal(cfg);
+    const healthy = await waitForBackendHealth(8000);
+    if (!healthy) {
+      if (settingsApiStatus) settingsApiStatus.textContent = 'Saved locally. Backend is still starting...';
+      appendLocalLog('[sys] Provider config saved locally; backend not ready yet.');
+      return;
+    }
+    await saveLlmConfigToBackend(cfg);
+
     apiKeyHydrated = true;
-    if (onboardingApiKey) onboardingApiKey.value = key;
     syncSettingsApiUi();
-    if (settingsApiStatus) settingsApiStatus.textContent = 'API key saved successfully.';
-    appendLocalLog('[sys] Gemini API key updated from Settings.');
+    if (settingsApiStatus) settingsApiStatus.textContent = 'Providers saved successfully.';
+    appendLocalLog('[sys] AI providers updated from Settings.');
     await pollState();
   } catch (error) {
     if (settingsApiStatus) settingsApiStatus.textContent = error?.message || 'Failed to save API key.';
-    appendLocalLog('[error] Failed to save API key from Settings.');
+    appendLocalLog('[error] Failed to save providers from Settings.');
   }
 });
 
@@ -2829,7 +3320,8 @@ async function handleOnboardingSubmit() {
   }
   const email = authEmail.value.trim();
   const password = authPassword.value.trim();
-  const apiKey = onboardingApiKey.value.trim();
+  const cfg = collectLlmConfigFromInputs({ from: 'onboarding' });
+  const geminiKey = String(cfg?.providers?.gemini?.api_key || '').trim();
 
   if (!validateAccountInputs() || !validateApiKey(true)) {
     setAuthMessage('Complete both setup steps before continuing.', 'error');
@@ -2843,15 +3335,16 @@ async function handleOnboardingSubmit() {
       ? await createFirebaseUser(email, password)
       : await signInFirebaseUser(email, password);
 
-    const apiResponse = await fetch(`${backendUrl}/api/api-key`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: apiKey }),
-    });
-
-    if (!apiResponse.ok) {
-      throw new Error('Failed to save Gemini API key.');
+    // Persist locally first so we don't lose keys even if the backend is slow to boot.
+    if (geminiKey) {
+      await persistApiKeyForCurrentUser(geminiKey);
     }
+    await persistLlmConfigLocal(cfg);
+    const healthy = await waitForBackendHealth(12000);
+    if (!healthy) {
+      throw new Error('Backend is still starting. Your provider keys were saved locally; please try again in a moment.');
+    }
+    await saveLlmConfigToBackend(cfg);
 
     await saveAppState({
       onboardingComplete: true,
@@ -2860,7 +3353,7 @@ async function handleOnboardingSubmit() {
       firebaseUserId: authData.localId || '',
       userName: email.split('@')[0],
       userPhotoUrl: '',
-      geminiApiKey: apiKey,
+      geminiApiKey: geminiKey || '',
     });
     apiKeyHydrated = true;
 
@@ -2910,30 +3403,62 @@ togglePasswordBtn?.addEventListener('click', () => {
 
 authEmail?.addEventListener('input', () => validateAccountInputs());
 authPassword?.addEventListener('input', () => validateAccountInputs());
-onboardingApiKey?.addEventListener('input', () => validateApiKey());
+onboardingProviderSelect?.addEventListener('change', () => syncProviderManagerUi('onboarding'));
+onboardingProviderKey?.addEventListener('input', () => validateApiKey(false));
+onboardingProviderModel?.addEventListener('input', () => validateApiKey(false));
+onboardingProviderAddBtn?.addEventListener('click', async () => addOrUpdateProviderFromUi('onboarding'));
+
+settingsProviderSelect?.addEventListener('change', () => syncProviderManagerUi('settings'));
+settingsProviderKey?.addEventListener('input', () => {});
+settingsProviderModel?.addEventListener('input', () => {});
+settingsProviderAddBtn?.addEventListener('click', async () => addOrUpdateProviderFromUi('settings'));
+
+onboardingProvidersList?.addEventListener('click', (event) => {
+  const target = event.target;
+  const btn = target instanceof HTMLElement ? target.closest('.provider-remove-btn') : null;
+  if (!btn) return;
+  const provider = btn.getAttribute('data-provider') || btn.dataset.provider;
+  removeProvider(provider);
+  renderProviderList('onboarding');
+  renderProviderList('settings');
+  validateApiKey(false);
+});
+
+settingsProvidersList?.addEventListener('click', (event) => {
+  const target = event.target;
+  const btn = target instanceof HTMLElement ? target.closest('.provider-remove-btn') : null;
+  if (!btn) return;
+  const provider = btn.getAttribute('data-provider') || btn.dataset.provider;
+  removeProvider(provider);
+  renderProviderList('onboarding');
+  renderProviderList('settings');
+});
 
 testApiKeyBtn?.addEventListener('click', async () => {
-  const key = onboardingApiKey.value.trim();
   if (!validateApiKey(true)) {
-    setAuthMessage('Enter a valid Gemini API key first.', 'error');
+    setAuthMessage('Enter at least one provider API key first.', 'error');
     return;
   }
-  setAuthMessage('Saving Gemini API key for this session...');
+  setAuthMessage('Saving provider configuration for this session...');
   try {
-    const apiResponse = await fetch(`${backendUrl}/api/api-key`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
-    if (!apiResponse.ok) {
-      throw new Error('Save failed.');
+    const cfg = collectLlmConfigFromInputs({ from: 'onboarding' });
+    await persistLlmConfigLocal(cfg);
+    const healthy = await waitForBackendHealth(12000);
+    if (!healthy) {
+      setFieldFeedback(apiKeyFeedback, 'Saved locally. Backend is still starting...', 'success');
+      setAuthMessage('Saved locally. You can initialize in a moment.', 'success');
+      return;
     }
-    await saveAppState({ geminiApiKey: key, onboardingComplete: true });
-    apiKeyHydrated = true;
-    setFieldFeedback(apiKeyFeedback, 'Gemini API key saved for this session', 'success');
-    setAuthMessage('Key saved. You can initialize now.', 'success');
+    await saveLlmConfigToBackend(cfg);
+    const geminiKey = String(cfg?.providers?.gemini?.api_key || '').trim();
+    if (geminiKey) {
+      await persistApiKeyForCurrentUser(geminiKey);
+      apiKeyHydrated = true;
+    }
+    setFieldFeedback(apiKeyFeedback, 'Providers saved for this session', 'success');
+    setAuthMessage('Providers saved. You can initialize now.', 'success');
   } catch (error) {
-    setFieldFeedback(apiKeyFeedback, 'Could not save API key', 'error');
+    setFieldFeedback(apiKeyFeedback, 'Could not save provider configuration', 'error');
     setAuthMessage(error.message || 'Save failed.', 'error');
   }
 });
@@ -2963,21 +3488,31 @@ tutorialFinishBtn?.addEventListener('click', async () => {
 });
 
 googleSignInBtn?.addEventListener('click', async () => {
-  const apiKey = onboardingApiKey.value.trim();
-  if (!apiKey) {
-    setAuthMessage('Enter your Gemini API key before using Google sign-in.', 'error');
-    return;
-  }
   setAuthMessage('Opening Google sign-in...');
   try {
+    const cfg = collectLlmConfigFromInputs({ from: 'onboarding' });
+    if (!cfg || !cfg.providers || !Object.keys(cfg.providers).length) {
+      setAuthMessage('Add at least one provider API key before continuing.', 'error');
+      return;
+    }
     const authData = await signInWithGoogleFirebase();
-    const apiResponse = await fetch(`${backendUrl}/api/api-key`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: apiKey }),
-    });
-    if (!apiResponse.ok) {
-      throw new Error('Failed to save Gemini API key.');
+    const geminiKey = String(cfg?.providers?.gemini?.api_key || '').trim();
+    if (geminiKey) {
+      await persistApiKeyForCurrentUser(geminiKey);
+      apiKeyHydrated = true;
+    }
+    await persistLlmConfigLocal(cfg);
+    const healthy = await waitForBackendHealth(12000);
+    if (healthy) {
+      await saveLlmConfigToBackend(cfg);
+      // Back-compat endpoint (harmless if configured via llm-config already).
+      if (geminiKey) {
+        await fetch(`${backendUrl}/api/api-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: geminiKey }),
+        }).catch(() => {});
+      }
     }
     await saveAppState({
       onboardingComplete: true,
@@ -3471,7 +4006,24 @@ async function bootstrapApp() {
 bootstrapApp();
 pollActiveContext();
 
+// Subtle "living" background: cursor-driven radial light (black/white only).
+// Kept intentionally gentle so it doesn't look like RGB gamer glow.
+if (shell) {
+  let pending = null;
+  shell.addEventListener('mousemove', (ev) => {
+    if (pending) return;
+    const x = ev.clientX;
+    const y = ev.clientY;
+    pending = requestAnimationFrame(() => {
+      pending = null;
+      const rect = shell.getBoundingClientRect();
+      const px = rect.width ? (x - rect.left) / rect.width : 0.5;
+      const py = rect.height ? (y - rect.top) / rect.height : 0.5;
+      shell.style.setProperty('--mx', `${Math.max(0, Math.min(1, px))}`);
+      shell.style.setProperty('--my', `${Math.max(0, Math.min(1, py))}`);
+    });
+  });
+}
+
 setInterval(pollState, 1100);
 setInterval(pollActiveContext, 1000);
-
-

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "build:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-backend.ps1",
-    "dist": "npm run build:backend && electron-builder --win dir"
+    "dist": "npm run build:backend && electron-builder --win"
   },
   "devDependencies": {
     "electron": "^37.2.0",
@@ -51,7 +51,7 @@
     },
     "win": {
       "target": [
-        "dir"
+        "nsis"
       ],
       "signAndEditExecutable": false,
       "icon": "build/brahma.ico"

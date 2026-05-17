@@ -19,11 +19,14 @@ let lastClipboardText = '';
 let suppressNextClipboard = false;
 let miniDockCollapsed = false;
 const projectRoot = path.resolve(__dirname, '..');
-// Use a local, writable data directory in dev to avoid permission issues.
-const devDataRoot = path.join(projectRoot, 'electron-data');
+const userHome = os.homedir();
+const localAppData = process.env.LOCALAPPDATA || path.join(userHome, 'AppData', 'Local');
+// In dev, keep Chromium profile under TEMP to avoid "Access is denied" crashes caused by
+// Controlled Folder Access / AV policies on certain folders.
+const devUserDataRoot = path.join(os.tmpdir(), 'BrahmaAI-dev-profile');
 const userDataRoot = app.isPackaged
-  ? path.join(os.homedir(), 'AppData', 'Local', 'BrahmaAI')
-  : devDataRoot;
+  ? path.join(localAppData, 'BrahmaAI')
+  : devUserDataRoot;
 const electronDataDir = userDataRoot;
 const electronCacheDir = path.join(electronDataDir, 'Cache');
 const electronQuotaDir = path.join(electronDataDir, 'Quota');
@@ -33,6 +36,15 @@ let singleInstanceLock = true;
 let activeWinModulePromise = null;
 
 app.setAppUserModelId('com.brahma.ai');
+
+// Some Windows security/AV setups (including McAfee hardened policies) can break Chromium's
+// sandbox/AppContainer startup with "platform_channel.cc: Access is denied".
+// Running without the renderer sandbox avoids this fatal crash.
+app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-features', 'RendererAppContainer,NetworkServiceSandbox');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+// Extra stability for hardened Windows setups.
+try { app.disableHardwareAcceleration(); } catch (_e) {}
 
 function swallowEpipe(stream) {
   if (!stream || typeof stream.write !== 'function') return;
@@ -105,9 +117,20 @@ function resolveBackendCommand() {
     }
   }
 
-  // Dev: use env override, then local venv, then system python
-  const envPython = process.env.BRAHMA_PYTHON;
   const backendScript = path.join(projectRoot, 'bridge_backend.py');
+
+  // Dev/local: if we have a backend exe that is at least as new as the Python entrypoint,
+  // prefer it (no Python dependency, matches what gets shipped). Otherwise fall back to Python.
+  const localExe = path.join(projectRoot, 'brahma-backend.exe');
+  const localExeStat = fs.existsSync(localExe) ? fs.statSync(localExe) : null;
+  const scriptStat = fs.existsSync(backendScript) ? fs.statSync(backendScript) : null;
+  const exeLooksFresh = !!(localExeStat && scriptStat && localExeStat.mtimeMs >= scriptStat.mtimeMs);
+  if (localExeStat && exeLooksFresh) {
+    return { command: localExe, args: [], cwd: projectRoot };
+  }
+
+  // Dev: use env override, then local venv, then a known local Python install, then system python.
+  const envPython = process.env.BRAHMA_PYTHON;
 
   if (envPython && fs.existsSync(envPython)) {
     return { command: envPython, args: [backendScript], cwd: projectRoot };
@@ -135,7 +158,53 @@ function resolveBackendCommand() {
     }
   }
 
+  const localBkExe = path.join(projectRoot, 'bk', 'brahma-backend.exe');
+  if (fs.existsSync(localBkExe)) {
+    return { command: localBkExe, args: [], cwd: path.join(projectRoot, 'bk') };
+  }
+
   return { command: 'python', args: [backendScript], cwd: projectRoot };
+}
+
+function resolveBackendCandidates() {
+  // Always try the primary resolution first.
+  const primary = resolveBackendCommand();
+  const candidates = [primary];
+
+  // In dev: if primary isn't the local exe, add it as a fallback (and vice-versa).
+  if (!app.isPackaged) {
+    const backendScript = path.join(projectRoot, 'bridge_backend.py');
+    const localExe = path.join(projectRoot, 'brahma-backend.exe');
+    if (fs.existsSync(localExe) && primary.command !== localExe) {
+      candidates.push({ command: localExe, args: [], cwd: projectRoot });
+    }
+
+    // Python fallbacks (helpful if an AV blocks spawning the exe).
+    const userHome = os.homedir();
+    const localAppData = process.env.LOCALAPPDATA || path.join(userHome, 'AppData', 'Local');
+    const pythonCandidates = [
+      path.join(userHome, 'Miniconda3', 'python.exe'),
+      path.join(userHome, 'Anaconda3', 'python.exe'),
+      path.join(localAppData, 'Programs', 'Python', 'Python313', 'python.exe'),
+      path.join(localAppData, 'Programs', 'Python', 'Python312', 'python.exe'),
+      path.join(localAppData, 'Programs', 'Python', 'Python311', 'python.exe'),
+      path.join(localAppData, 'Programs', 'Python', 'Python310', 'python.exe'),
+    ];
+    for (const py of pythonCandidates) {
+      if (fs.existsSync(py) && primary.command !== py) {
+        candidates.push({ command: py, args: [backendScript], cwd: projectRoot });
+      }
+    }
+  }
+
+  // De-dupe by command+args.
+  const seen = new Set();
+  return candidates.filter((c) => {
+    const key = `${c.command}::${(c.args || []).join(' ')}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function cleanupStaleBackends() {
@@ -145,6 +214,10 @@ function cleanupStaleBackends() {
       const psCommand = [
         '$marker = [regex]::Escape($args[0])',
         "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -match $marker } | ForEach-Object {",
+        '  try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {}',
+        '}',
+        // Also kill any previously launched packaged backends to avoid port conflicts.
+        "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'brahma-backend.exe' -or $_.Name -eq 'brahma-backend' } | ForEach-Object {",
         '  try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {}',
         '}',
       ].join('; ');
@@ -198,30 +271,85 @@ function defaultProjectsRoot() {
 
 async function startBackend() {
   await cleanupStaleBackends();
-  const { command, args, cwd } = resolveBackendCommand();
-  backendProcess = spawn(command, args, {
-    cwd,
-    env: {
-      ...(() => {
-        const env = { ...process.env };
-        delete env.GOOGLE_API_KEY;
-        delete env.GEMINI_API_KEY;
-        return env;
-      })(),
-      BRAHMA_BACKEND_PORT: '8770',
-      BRAHMA_CONFIG_DIR: path.join(electronDataDir, 'config'),
-      BRAHMA_LOG_FILE: path.join(electronDataDir, 'backend.log'),
-    },
-    windowsHide: true,
-  });
+  const candidates = resolveBackendCandidates();
+  let lastError = null;
 
-  backendProcess.stdout.on('data', () => {});
+  for (const candidate of candidates) {
+    const { command, args, cwd } = candidate;
+    try {
+      backendProcess = spawn(command, args, {
+        cwd,
+        env: {
+          ...(() => {
+            const env = { ...process.env };
+            delete env.GOOGLE_API_KEY;
+            delete env.GEMINI_API_KEY;
+            return env;
+          })(),
+          BRAHMA_BACKEND_PORT: '8770',
+          BRAHMA_CONFIG_DIR: path.join(electronDataDir, 'config'),
+          BRAHMA_LOG_FILE: path.join(electronDataDir, 'backend.log'),
+        },
+        // Some AV suites block hidden child processes; if we fail with EPERM we retry
+        // other candidates (including Python) automatically.
+        windowsHide: true,
+      });
 
-  backendProcess.stderr.on('data', () => {});
+      backendProcess.stdout.on('data', () => {});
+      backendProcess.stderr.on('data', () => {});
 
-  backendProcess.on('exit', () => {
-    backendProcess = null;
-  });
+      backendProcess.on('exit', () => {
+        backendProcess = null;
+      });
+
+      backendProcess.on('error', (error) => {
+        try {
+          console.error('[backend] spawn error', error);
+        } catch (_err) {}
+      });
+
+      return;
+    } catch (error) {
+      lastError = error;
+      backendProcess = null;
+      try {
+        console.error('[backend] spawn failed', command, error);
+      } catch (_err) {}
+    }
+  }
+
+  throw lastError || new Error('Failed to start backend.');
+}
+
+async function waitForBackendReady(timeoutMs = 15000) {
+  const startedAt = Date.now();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const res = await fetch('http://127.0.0.1:8770/health', { timeout: 2000 });
+      if (res.ok) return true;
+    } catch (_error) {
+      // ignore; will retry
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      return false;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+async function ensureBackendReady() {
+  const ok = await waitForBackendReady(18000);
+  if (ok) return true;
+  // One restart attempt to handle transient failures/port conflicts on boot.
+  try {
+    if (backendProcess) {
+      backendProcess.kill();
+      backendProcess = null;
+    }
+  } catch (_err) {}
+  await startBackend();
+  return await waitForBackendReady(18000);
 }
 
 if (!singleInstanceLock) {
@@ -246,15 +374,21 @@ function createWindow() {
     height: 820,
     minWidth: 980,
     minHeight: 700,
-    show: false,
+    // Show immediately; we still keep the "reveal" logic as a safety net.
+    show: true,
     autoHideMenuBar: true,
-    backgroundColor: '#07101d',
+    // Strict monochrome UI baseline (renderer draws everything).
+    backgroundColor: '#000000',
     title: 'Brahma AI',
-    icon: path.join(__dirname, 'assets', 'brahma.png'),
+    // Use the app icon everywhere (taskbar/window). Windows prefers .ico.
+    icon: path.join(__dirname, 'assets', 'brahma.ico'),
+    // Native frame enabled (reliable on Windows; avoids custom titlebar glitches).
+    frame: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
       webviewTag: true,
       partition: 'temp:brahma-main',
     },
@@ -283,6 +417,8 @@ function createWindow() {
     }, 1200);
   };
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Ensure the window is visible even if `ready-to-show` never fires.
+  try { mainWindow.show(); } catch (_e) {}
   mainWindow.once('ready-to-show', revealMainWindow);
   mainWindow.webContents.once('did-finish-load', revealMainWindow);
   setTimeout(revealMainWindow, 2500);
@@ -290,6 +426,12 @@ function createWindow() {
     event.preventDefault();
     mainWindow.hide();
     showMiniWindow();
+  });
+  mainWindow.on('maximize', () => {
+    try { mainWindow.webContents.send('window-maximized-changed', true); } catch (_e) {}
+  });
+  mainWindow.on('unmaximize', () => {
+    try { mainWindow.webContents.send('window-maximized-changed', false); } catch (_e) {}
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -313,6 +455,7 @@ function createCursorBubble() {
       preload: path.join(__dirname, 'cursor-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
   cursorBubble.loadFile(path.join(__dirname, 'renderer', 'cursor-bubble.html'));
@@ -364,6 +507,7 @@ function createScreenBorderWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
   screenBorderWindow.setIgnoreMouseEvents(true, { forward: true });
@@ -515,6 +659,7 @@ function createMiniWindow() {
       preload: path.join(__dirname, 'mini-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
       partition: 'temp:brahma-mini',
     },
   });
@@ -589,7 +734,27 @@ function toggleMiniDock() {
 }
 
 app.whenReady().then(async () => {
-  await startBackend();
+  try {
+    await startBackend();
+    // Avoid race conditions on first launch: renderer immediately fetches `/api/state`
+    // and saves the API key. Wait until the backend is actually listening.
+    await ensureBackendReady();
+  } catch (error) {
+    // Do not crash the entire app if the backend is blocked (common with AV suites).
+    // The UI can still open and guide the user to allow-list the backend binary.
+    try {
+      dialog.showMessageBox({
+        type: 'error',
+        title: 'Backend Blocked',
+        message: 'Brahma AI could not start its backend service.',
+        detail:
+          'This is usually caused by antivirus (McAfee) blocking a child process. ' +
+          'Please allow-list `brahma-backend.exe` in your Brahma folder and restart.\n\n' +
+          `Details: ${error?.message || error}`,
+      });
+    } catch (_err) {}
+  }
+
   createWindow();
   createCursorBubble();
   globalShortcut.register('Control+Shift+A', showCursorBubble);
@@ -618,6 +783,35 @@ app.whenReady().then(async () => {
 
 ipcMain.handle('restore-main-window', () => {
   restoreMainWindow();
+});
+
+ipcMain.handle('window-minimize', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  mainWindow.minimize();
+  return { ok: true };
+});
+
+ipcMain.handle('window-maximize', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  mainWindow.maximize();
+  return { ok: true };
+});
+
+ipcMain.handle('window-unmaximize', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  mainWindow.unmaximize();
+  return { ok: true };
+});
+
+ipcMain.handle('window-is-maximized', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, maximized: false };
+  return { ok: true, maximized: mainWindow.isMaximized() };
+});
+
+ipcMain.handle('window-close', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  mainWindow.close();
+  return { ok: true };
 });
 
 ipcMain.handle('toggle-mini-dock', () => {
@@ -672,6 +866,33 @@ ipcMain.handle('get-app-state', () => {
 
 ipcMain.handle('save-app-state', (_, nextState) => {
   return saveAppState(nextState || {});
+});
+
+ipcMain.handle('get-launch-on-startup', () => {
+  try {
+    // On Windows/macOS this returns the OS login item state.
+    const settings = app.getLoginItemSettings();
+    return { ok: true, enabled: !!settings.openAtLogin };
+  } catch (error) {
+    return { ok: false, enabled: false, error: String(error?.message || error) };
+  }
+});
+
+ipcMain.handle('set-launch-on-startup', (_event, enabled) => {
+  try {
+    const shouldEnable = !!enabled;
+    // For packaged builds, process.execPath is the installed exe.
+    // For dev, this may point at electron.exe; it's still safe.
+    app.setLoginItemSettings({
+      openAtLogin: shouldEnable,
+      path: process.execPath,
+      args: [],
+    });
+    const after = app.getLoginItemSettings();
+    return { ok: true, enabled: !!after.openAtLogin };
+  } catch (error) {
+    return { ok: false, enabled: false, error: String(error?.message || error) };
+  }
 });
 
 ipcMain.handle('get-active-window', async () => {

@@ -8,12 +8,17 @@ contextBridge.exposeInMainWorld('brahma', {
   getActiveWindow: () => ipcRenderer.invoke('get-active-window'),
   pickProjectFolder: () => ipcRenderer.invoke('pick-project-folder'),
   createProjectFolder: (name) => ipcRenderer.invoke('create-project-folder', name),
+  getLaunchOnStartup: () => ipcRenderer.invoke('get-launch-on-startup'),
+  setLaunchOnStartup: (enabled) => ipcRenderer.invoke('set-launch-on-startup', !!enabled),
+  // windowControls reserved (native frame enabled)
+  windowControls: null,
   generateQrDataUrl: async (text) => QRCode.toDataURL(String(text || ''), {
     margin: 1,
     width: 320,
     color: {
-      dark: '#071422',
-      light: '#dff9ff',
+      // Strict monochrome QR so it matches the app theme.
+      dark: '#000000',
+      light: '#ffffff',
     },
   }),
 });

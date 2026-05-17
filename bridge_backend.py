@@ -25,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote_plus, quote
 from urllib.request import urlopen, Request
+from urllib.error import HTTPError, URLError
 
 from main import JarvisLive
 from actions.gesture_control import GestureController
@@ -49,6 +50,12 @@ API_FILE = CONFIG_DIR / "api_keys.json"
 ACTION_API_FILE = BASE_DIR / "config" / "api_keys.json"
 LEGACY_ACTION_FILE = BASE_DIR / "actions" / "config" / "api_keys.json"
 LOG_FILE = os.environ.get("BRAHMA_LOG_FILE")
+if not LOG_FILE:
+    # Always keep a local log, even in packaged/windowed mode where stdout is not visible.
+    try:
+        LOG_FILE = str((CONFIG_DIR / "backend.log").resolve())
+    except Exception:
+        LOG_FILE = None
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("BRAHMA_BACKEND_PORT", "8770"))
 HYBRID_SETTINGS_FILE = CONFIG_DIR / "hybrid_settings.json"
@@ -260,7 +267,8 @@ class BridgeUI:
         self.hybrid_settings = self._load_hybrid_settings()
         self.live_ready = False
         self._ensure_primary_api_file()
-        self._api_key_ready = self._api_keys_exist()
+        self.llm_config = self._load_llm_config()
+        self._api_key_ready = self._llm_any_configured()
         self._prime_api_key_env()
         self._lock = threading.Lock()
         self.gesture_controller = GestureController(player=self)
@@ -302,6 +310,220 @@ class BridgeUI:
             name="BrahmaDiscordRemote",
         )
         self._discord_remote_thread.start()
+
+    def _llm_any_configured(self) -> bool:
+        try:
+            providers = (self.llm_config or {}).get("providers") or {}
+            if not isinstance(providers, dict):
+                return False
+            for p in providers.values():
+                if isinstance(p, dict) and str(p.get("api_key") or "").strip():
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _load_llm_config(self) -> dict:
+        """
+        Loads provider config from api_keys.json.
+
+        Backwards compatible with legacy:
+          { "gemini_api_key": "..." }
+        """
+        payload = {}
+        for key_path in (API_FILE, ACTION_API_FILE, LEGACY_ACTION_FILE):
+            if not key_path.exists():
+                continue
+            try:
+                payload = json.load(open(key_path, "r", encoding="utf-8"))
+                if isinstance(payload, dict):
+                    break
+            except Exception:
+                continue
+
+        if not isinstance(payload, dict):
+            payload = {}
+
+        # Migrate legacy key into provider config.
+        legacy = str(payload.get("gemini_api_key") or "").strip()
+        providers = payload.get("providers")
+        primary = str(payload.get("primary_provider") or "").strip().lower()
+        if not isinstance(providers, dict):
+            providers = {}
+        if legacy and "gemini" not in providers:
+            providers["gemini"] = {"api_key": legacy, "model": ""}
+        if not primary:
+            primary = "gemini" if legacy else ""
+        return {
+            "primary_provider": primary,
+            "providers": providers,
+        }
+
+    def _mask_llm_config(self) -> dict:
+        cfg = self.llm_config or {}
+        providers = cfg.get("providers") if isinstance(cfg.get("providers"), dict) else {}
+        masked = {}
+        for name, item in providers.items():
+            if not isinstance(item, dict):
+                continue
+            api_key = str(item.get("api_key") or "").strip()
+            masked[name] = {
+                "configured": bool(api_key),
+                "model": str(item.get("model") or "").strip(),
+            }
+        return {
+            "primary_provider": str(cfg.get("primary_provider") or "").strip().lower(),
+            "providers": masked,
+        }
+
+    def save_llm_config(self, incoming: dict) -> dict:
+        """
+        Persist provider config. Requires at least 1 configured provider.
+        """
+        incoming = incoming if isinstance(incoming, dict) else {}
+        primary = str(incoming.get("primary_provider") or incoming.get("primaryProvider") or "").strip().lower()
+        providers_in = incoming.get("providers")
+        if not isinstance(providers_in, dict):
+            providers_in = {}
+
+        providers = {}
+        for raw_name, raw_item in providers_in.items():
+            name = str(raw_name or "").strip().lower()
+            if not name:
+                continue
+            item = raw_item if isinstance(raw_item, dict) else {}
+            api_key = str(item.get("api_key") or item.get("apiKey") or "").strip()
+            model = str(item.get("model") or "").strip()
+            if api_key:
+                providers[name] = {"api_key": api_key, "model": model}
+
+        if not providers:
+            return {"ok": False, "error": "No API keys provided. Add at least one provider key."}
+
+        if primary and primary not in providers:
+            # If they picked a primary but didn't provide its key, fall back to first configured provider.
+            primary = ""
+
+        if not primary:
+            # Prefer Gemini if present, else first configured provider.
+            primary = "gemini" if "gemini" in providers else next(iter(providers.keys()))
+
+        self.llm_config = {"primary_provider": primary, "providers": providers}
+
+        # Keep legacy gemini_api_key for older code paths (main.py streaming + some memory helpers).
+        legacy_gemini = str((providers.get("gemini") or {}).get("api_key") or "").strip()
+        to_write = {
+            "primary_provider": primary,
+            "providers": providers,
+        }
+        if legacy_gemini:
+            to_write["gemini_api_key"] = legacy_gemini
+
+        try:
+            API_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(API_FILE, "w", encoding="utf-8") as f:
+                json.dump(to_write, f, indent=4)
+        except Exception as exc:
+            return {"ok": False, "error": f"Could not write config: {exc}"}
+
+        # Also update env for Gemini if configured.
+        if legacy_gemini:
+            os.environ["GOOGLE_API_KEY"] = legacy_gemini
+            os.environ["GEMINI_API_KEY"] = legacy_gemini
+
+        self._api_key_ready = True
+        self.write_log(f"SYS: LLM providers saved. Primary: {primary}.")
+        return {"ok": True, "llm": self._mask_llm_config()}
+
+    def _openai_compatible_chat(self, base_url: str, api_key: str, model: str, messages: list) -> str:
+        base_url = str(base_url or "").rstrip("/")
+        url = f"{base_url}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.4,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            # Helpful (and accepted) by OpenRouter; ignored by others.
+            "X-Title": "Brahma AI",
+        }
+        req = Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urlopen(req, timeout=25) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            out = json.loads(raw)
+            choice = (out.get("choices") or [{}])[0]
+            msg = choice.get("message") or {}
+            content = msg.get("content") or ""
+            return str(content).strip()
+        except HTTPError as exc:
+            # Surface status for fallback logic.
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            raise RuntimeError(f"HTTP_{getattr(exc, 'code', 'ERR')} {body}".strip())
+        except URLError as exc:
+            raise RuntimeError(f"URL_ERROR {exc}")
+
+    def llm_reply(self, text: str) -> str:
+        """
+        Text-only LLM response with provider fallback.
+        Used when live streaming is not available.
+        """
+        cfg = self.llm_config or {}
+        providers = cfg.get("providers") if isinstance(cfg.get("providers"), dict) else {}
+        primary = str(cfg.get("primary_provider") or "").strip().lower()
+        chain = []
+        if primary and primary in providers:
+            chain.append(primary)
+        for name in providers.keys():
+            if name not in chain:
+                chain.append(name)
+
+        system_prompt = "You are Brahma AI, a concise desktop assistant. Answer directly."
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": str(text or "").strip()},
+        ]
+
+        last_err = None
+        for name in chain:
+            item = providers.get(name) if isinstance(providers.get(name), dict) else {}
+            api_key = str(item.get("api_key") or "").strip()
+            model = str(item.get("model") or "").strip()
+            if not api_key:
+                continue
+            try:
+                if name == "openrouter":
+                    base = "https://openrouter.ai/api/v1"
+                    model = model or "openai/gpt-4o-mini"
+                    return self._openai_compatible_chat(base, api_key, model, messages) or ""
+                if name == "openai":
+                    base = "https://api.openai.com/v1"
+                    model = model or "gpt-4.1-mini"
+                    return self._openai_compatible_chat(base, api_key, model, messages) or ""
+                if name in ("grok", "xai"):
+                    base = "https://api.x.ai/v1"
+                    model = model or "grok-2-latest"
+                    return self._openai_compatible_chat(base, api_key, model, messages) or ""
+                if name == "gemini":
+                    # If we are here, live streaming is not available. Fall back to offline assistant.
+                    return offline_assistant(text)
+            except Exception as exc:
+                last_err = exc
+                err_str = str(exc)
+                # Retry chain on rate limits / transient failures.
+                if "HTTP_429" in err_str or "rate" in err_str.lower() or "HTTP_5" in err_str:
+                    continue
+                continue
+        if last_err:
+            return f"Online providers failed; using offline assistant. ({last_err})\n\n{offline_assistant(text)}"
+        return offline_assistant(text)
 
     def _edge_only_voice_settings(self, settings=None):
         merged = dict(settings or {})
@@ -3152,10 +3374,15 @@ p{line-height:1.75}
         key = key.strip()
         if not key:
             return False
-        # Primary location (AppData or configured BRAHMA_CONFIG_DIR)
-        API_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(API_FILE, "w", encoding="utf-8") as f:
-            json.dump({"gemini_api_key": key}, f, indent=4)
+        # Keep legacy endpoint for Gemini; also updates the provider config.
+        merged = self._load_llm_config()
+        providers = merged.get("providers") if isinstance(merged.get("providers"), dict) else {}
+        if not isinstance(providers, dict):
+            providers = {}
+        providers["gemini"] = {"api_key": key, "model": str((providers.get("gemini") or {}).get("model") or "")}
+        primary = str(merged.get("primary_provider") or "").strip().lower() or "gemini"
+        incoming = {"primary_provider": primary, "providers": providers}
+        self.save_llm_config(incoming)
         # Additional copies for packaged/local modules
         try:
             ACTION_API_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -3204,6 +3431,7 @@ p{line-height:1.75}
         return {
             "status": self.status_text,
             "apiKeyReady": self._api_key_ready,
+            "llm": self._mask_llm_config(),
             "screenAnalysisActive": self.screen_analysis_active,
             "gestureEnabled": self.gesture_enabled,
             "micEnabled": self.mic_enabled,
@@ -3475,7 +3703,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                 })
                 return
             if self.path == "/health":
-                self._send_json({"ok": True, **UI.get_connection_info()})
+                # Keep this endpoint extremely fast and deterministic: Electron uses it to
+                # decide whether the backend is ready. Doing DNS/IP discovery here can hang
+                # on some Windows setups and triggers repeated backend restarts.
+                self._send_json({"ok": True, "port": PORT})
                 return
             self._send_json({"error": "not_found"}, 404)
         except Exception:
@@ -3539,12 +3770,33 @@ class ApiHandler(BaseHTTPRequestHandler):
                     })
                     return
                 route = route_command(text, advanced_mode=False)
+
+                # If streaming live session is available (Gemini), use it.
                 if UI.send_callback and UI.live_ready:
                     UI.send_callback(UI._inject_project_context(text))
                     self._send_json({
                         "ok": True,
                         "mode": "online",
                         "engine": "brahma_live",
+                        "route": {
+                            "engine": route.engine,
+                            "confidence": route.confidence,
+                            "reason": route.reason,
+                        },
+                    })
+                    return
+
+                # Otherwise, use text-only providers for simple chat (with fallback), and keep
+                # deterministic offline/tool logic for multi-step automation.
+                if route.engine == "offline" and UI._llm_any_configured():
+                    message = UI.llm_reply(text)
+                    UI.write_log(f"Brahma AI: {message}")
+                    UI._speak_response_async(str(message))
+                    self._send_json({
+                        "ok": True,
+                        "mode": "online_text",
+                        "message": message,
+                        "engine": "llm_router",
                         "route": {
                             "engine": route.engine,
                             "confidence": route.confidence,
@@ -3568,6 +3820,11 @@ class ApiHandler(BaseHTTPRequestHandler):
             if self.path == "/api/api-key":
                 ok = UI.save_api_key(data.get("key", ""))
                 self._send_json({"ok": ok}, 200 if ok else 400)
+                return
+
+            if self.path == "/api/llm-config":
+                result = UI.save_llm_config(data or {})
+                self._send_json(result, 200 if result.get("ok") else 400)
                 return
 
             if self.path == "/api/toggle-gesture":
@@ -3698,6 +3955,17 @@ class ApiHandler(BaseHTTPRequestHandler):
                 result = UI.test_voice(str(data.get("text") or "").strip())
                 status = 200 if result.get("ok") else 400
                 self._send_json(result, status=status)
+                return
+
+            if self.path == "/api/speak":
+                # Renderer "readback": queue speech asynchronously so the HTTP request
+                # returns immediately (avoids UI hangs / repeated backend restarts).
+                text = str(data.get("text") or "").strip()
+                if not text:
+                    self._send_json({"ok": False, "error": "missing_text"}, 400)
+                    return
+                UI._speak_response_async(text)
+                self._send_json({"ok": True, "message": "queued"})
                 return
 
             if self.path == "/api/kasa":

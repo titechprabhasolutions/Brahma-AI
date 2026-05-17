@@ -83,9 +83,15 @@ def save_voice_settings(next_settings):
 
 def detect_voice_capabilities(settings=None):
     settings = settings or load_voice_settings()
+    edge_available = False
+    try:
+        import edge_tts  # noqa: F401
+        edge_available = True
+    except Exception:
+        edge_available = False
     return {
         "elevenlabs": bool(settings.get("elevenLabsApiKey") and settings.get("elevenLabsVoiceId")),
-        "edge_tts": bool(shutil.which("edge-tts") or importlib.util.find_spec("edge_tts")),
+        "edge_tts": bool(shutil.which("edge-tts") or importlib.util.find_spec("edge_tts") or edge_available),
         "piper": _resolve_piper_executable(settings) and bool(settings.get("piperModel")),
     }
 
@@ -160,28 +166,43 @@ def _speak_with_edge(text, settings):
     voice = settings.get("edgeVoice", "en-US-GuyNeural")
     rate = settings.get("edgeRate", "-6%")
     pitch = settings.get("edgePitch", "-2Hz")
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         temp_path = tmp.name
     try:
-        edge_binary = shutil.which("edge-tts")
-        base_cmd = [
-            "--voice",
-            voice,
-            "--text",
-            text,
-            "--format",
-            "riff-24khz-16bit-mono-pcm",
-            "--write-media",
-            temp_path,
-        ]
-        if edge_binary:
-            cmd = [edge_binary, *base_cmd]
-        else:
-            cmd = [sys.executable, "-m", "edge_tts", *base_cmd]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "edge-tts failed.")
-        _play_media_file(temp_path)
+        # Prefer the Python library so this works inside frozen/PyInstaller builds
+        # (calling `python -m edge_tts` can recurse into the frozen executable).
+        try:
+            import asyncio
+            import edge_tts
+
+            async def _run():
+                comm = edge_tts.Communicate(text=text, voice=voice, rate=rate, pitch=pitch)
+                await comm.save(temp_path)
+
+            asyncio.run(_run())
+            _play_media_file(temp_path)
+            return
+        except Exception:
+            # Fallback to CLI ONLY if present on PATH. Do NOT use `sys.executable -m edge_tts`
+            # because in frozen builds sys.executable is the app itself, which causes recursion.
+            edge_binary = shutil.which("edge-tts")
+            if not edge_binary:
+                raise RuntimeError("edge_tts library failed and edge-tts CLI not found.")
+            cmd = [
+                edge_binary,
+                "--voice",
+                voice,
+                "--text",
+                text,
+                "--format",
+                "riff-24khz-16bit-mono-pcm",
+                "--write-media",
+                temp_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "edge-tts failed.")
+            _play_media_file(temp_path)
     finally:
         try:
             os.remove(temp_path)
